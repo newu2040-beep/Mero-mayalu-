@@ -1,0 +1,151 @@
+package com.example.core.notifications
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.example.MainActivity
+import com.example.R
+import java.time.LocalTime
+
+object MeroNotificationHelper {
+    private const val CHANNEL_INTERESTS = "mero_mayalu_interests"
+    private const val CHANNEL_MESSAGES = "mero_mayalu_messages"
+
+    fun ensureChannels(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val interestChannel = NotificationChannel(
+                CHANNEL_INTERESTS,
+                "Interest Requests & Matches",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts when someone sends you an interest request or mutual match."
+            }
+            val messageChannel = NotificationChannel(
+                CHANNEL_MESSAGES,
+                "Mutual Messages",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Alerts for new messages in mutual connections."
+            }
+            nm.createNotificationChannel(interestChannel)
+            nm.createNotificationChannel(messageChannel)
+        }
+    }
+
+    fun hasNotificationPermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
+        }
+    }
+
+    private fun isInQuietHours(): Boolean {
+        val hour = LocalTime.now().hour
+        return hour >= 22 || hour < 7
+    }
+
+    @SuppressLint("MissingPermission")
+    fun showInterestNotification(
+        context: Context,
+        senderName: String,
+        discreet: Boolean,
+        quietHoursEnabled: Boolean,
+        isNepali: Boolean
+    ) {
+        if (quietHoursEnabled && isInQuietHours()) return
+        if (!hasNotificationPermission(context)) return
+        ensureChannels(context)
+
+        val title = if (isNepali) "मेरो मायालु" else "Mero Mayalu"
+        val body = when {
+            discreet && isNepali -> "तपाईंलाई एउटा नयाँ चासो अनुरोध आएको छ।"
+            discreet -> "You received a new interest request."
+            isNepali -> "$senderName ले तपाईंप्रति चासो पठाउनुभयो।"
+            else -> "$senderName sent you an interest request."
+        }
+        postNotification(
+            context = context,
+            channelId = CHANNEL_INTERESTS,
+            notificationId = 1001 + (senderName.hashCode() and 0xFF),
+            title = title,
+            body = body
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    fun showMessageNotification(
+        context: Context,
+        senderName: String,
+        preview: String,
+        discreet: Boolean,
+        quietHoursEnabled: Boolean,
+        isNepali: Boolean
+    ) {
+        if (quietHoursEnabled && isInQuietHours()) return
+        if (!hasNotificationPermission(context)) return
+        ensureChannels(context)
+
+        val title = if (discreet) {
+            if (isNepali) "मेरो मायालु" else "Mero Mayalu"
+        } else {
+            senderName
+        }
+        val body = when {
+            discreet && isNepali -> "नयाँ निजी सन्देश प्राप्त भयो।"
+            discreet -> "You have a new private message."
+            else -> preview.ifBlank { if (isNepali) "नयाँ सन्देश" else "New message" }
+        }
+        postNotification(
+            context = context,
+            channelId = CHANNEL_MESSAGES,
+            notificationId = 2001 + (senderName.hashCode() and 0xFF),
+            title = title,
+            body = body
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun postNotification(
+        context: Context,
+        channelId: String,
+        notificationId: Int,
+        title: String,
+        body: String
+    ) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.mipmap.ic_launcher_round)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+        }
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Mero Mayalu",
+  "description": "Nepali-first social connection and mutual-consent dating app with Himalayan Dusk design, Firestore realtime connections, and heritage discovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,282 @@
+{
+  "entities": {
+    "PrivateUser": {
+      "title": "PrivateUser",
+      "description": "Private user account, age verification, preferences, and active outgoing request pointer.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "Display name" },
+        "dateOfBirthPrivate": { "type": "string", "description": "Private ISO date of birth (YYYY-MM-DD)" },
+        "age": { "type": "integer", "description": "Computed age (18+)" },
+        "ageVerified": { "type": "boolean", "description": "Whether user is verified 18+" },
+        "gender": { "type": "string", "enum": ["Male", "Female"], "description": "Strictly Male or Female" },
+        "language": { "type": "string", "enum": ["ne", "en"], "description": "UI language preference" },
+        "theme": { "type": "string", "description": "Selected Nepali theme ID" },
+        "fontStyle": { "type": "string", "description": "Selected Nepali/Latin font style ID" },
+        "themeMode": { "type": "string", "enum": ["system", "light", "dark"], "description": "Theme brightness mode" },
+        "useBikramSambat": { "type": "boolean", "description": "Optional Bikram Sambat calendar toggle" },
+        "reducedMotion": { "type": "boolean", "description": "Reduced motion accessibility preference" },
+        "discoveryRadiusKm": { "type": "integer", "description": "Preferred discovery radius in km" },
+        "notificationsEnabled": { "type": "boolean", "description": "Notification toggle" },
+        "discreetNotifications": { "type": "boolean", "description": "Discreet lock-screen preview toggle" },
+        "quietHoursEnabled": { "type": "boolean", "description": "Quiet hours toggle" },
+        "visibility": { "type": "string", "enum": ["visible", "paused"], "description": "Discovery visibility" },
+        "activeOutgoingRequestId": { "type": "string", "description": "ID of single active outgoing interest request or empty string" },
+        "moderationStatus": { "type": "string", "enum": ["active", "restricted", "suspended"], "description": "Account moderation status" },
+        "acceptedTermsAt": { "type": "string", "format": "date-time", "description": "Server timestamp of Terms acceptance" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": [
+        "uid", "displayName", "dateOfBirthPrivate", "age", "ageVerified", "gender",
+        "language", "theme", "themeMode", "useBikramSambat", "reducedMotion",
+        "discoveryRadiusKm", "notificationsEnabled", "discreetNotifications",
+        "quietHoursEnabled", "visibility", "activeOutgoingRequestId",
+        "moderationStatus", "acceptedTermsAt", "createdAt", "updatedAt"
+      ]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Public discovery profile card excluding DOB, email, phone, and exact home address.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "age": { "type": "integer" },
+        "ageVerified": { "type": "boolean" },
+        "gender": { "type": "string", "enum": ["Male", "Female"] },
+        "bio": { "type": "string" },
+        "lookingFor": { "type": "string" },
+        "photoDataList": { "type": "array", "description": "Compressed profile photo data URIs (1..4)" },
+        "bannerData": { "type": "string", "description": "Customizable cover banner preset ID or compressed image data URI" },
+        "interests": { "type": "array", "description": "Selected or custom interest keys" },
+        "hobbies": { "type": "array", "description": "Selected hobby tags" },
+        "prompts": { "type": "array", "description": "Cultural/personality prompts (standard or custom Question::Answer)" },
+        "culturalBadge": { "type": "string" },
+        "province": { "type": "string" },
+        "district": { "type": "string" },
+        "municipality": { "type": "string" },
+        "publicLocationLabel": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["visible", "paused"] },
+        "moderationStatus": { "type": "string", "enum": ["active", "restricted", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid", "displayName", "age", "ageVerified", "gender", "bio", "lookingFor",
+        "photoDataList", "interests", "hobbies", "prompts", "culturalBadge",
+        "province", "district", "municipality", "publicLocationLabel",
+        "visibility", "moderationStatus", "createdAt", "updatedAt"
+      ]
+    },
+    "CulturePost": {
+      "title": "CulturePost",
+      "description": "Cultural thought, reflection, or heritage image shared in the Lotus Moments feed.",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "authorLocation": { "type": "string" },
+        "thoughtText": { "type": "string" },
+        "imageData": { "type": "string" },
+        "culturalTag": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "authorPhoto", "authorLocation", "thoughtText", "imageData", "culturalTag", "createdAt", "updatedAt"]
+    },
+    "PostReaction": {
+      "title": "PostReaction",
+      "description": "Per-user heart reaction on a CulturePost.",
+      "type": "object",
+      "properties": {
+        "userUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userUid", "createdAt"]
+    },
+    "SavedNote": {
+      "title": "SavedNote",
+      "description": "Private personal reflection or saved post note owned by a user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "noteText": { "type": "string" },
+        "sourcePostId": { "type": "string" },
+        "sourceAuthorName": { "type": "string" },
+        "sourceExcerpt": { "type": "string" },
+        "imageData": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "noteText", "sourcePostId", "sourceAuthorName", "sourceExcerpt", "imageData", "createdAt", "updatedAt"]
+    },
+    "InterestRequest": {
+      "title": "InterestRequest",
+      "description": "Mutual-consent interest request with one-active-outgoing constraint.",
+      "type": "object",
+      "properties": {
+        "fromUid": { "type": "string" },
+        "toUid": { "type": "string" },
+        "fromName": { "type": "string" },
+        "fromPhoto": { "type": "string" },
+        "fromLocation": { "type": "string" },
+        "toName": { "type": "string" },
+        "toPhoto": { "type": "string" },
+        "toLocation": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "DECLINED", "WITHDRAWN", "EXPIRED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "decisionAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "fromUid", "toUid", "fromName", "fromPhoto", "fromLocation",
+        "toName", "toPhoto", "toLocation", "status", "createdAt", "updatedAt", "expiresAt"
+      ]
+    },
+    "Connection": {
+      "title": "Connection",
+      "description": "Mutual connection created only upon recipient approval.",
+      "type": "object",
+      "properties": {
+        "memberUids": { "type": "array" },
+        "sourceRequestId": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "BLOCKED", "ENDED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["memberUids", "sourceRequestId", "conversationId", "status", "createdAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Private mutual-consent conversation metadata.",
+      "type": "object",
+      "properties": {
+        "memberUids": { "type": "array" },
+        "userAId": { "type": "string" },
+        "userAName": { "type": "string" },
+        "userAPhoto": { "type": "string" },
+        "userBId": { "type": "string" },
+        "userBName": { "type": "string" },
+        "userBPhoto": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "MUTED", "BLOCKED"] },
+        "lastMessageText": { "type": "string" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "memberUids", "userAId", "userAName", "userAPhoto", "userBId", "userBName",
+        "userBPhoto", "connectionId", "status", "lastMessageText", "lastMessageAt",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Message inside a mutual-consent conversation (text, image, or voice note).",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "type": { "type": "string", "enum": ["TEXT", "IMAGE", "VOICE"] },
+        "text": { "type": "string" },
+        "mediaData": { "type": "string" },
+        "audioDurationSec": { "type": "integer" },
+        "waveform": { "type": "array" },
+        "moderationStatus": { "type": "string", "enum": ["active", "flagged", "removed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderUid", "memberUids", "type", "text", "mediaData", "audioDurationSec", "waveform", "moderationStatus", "createdAt"]
+    },
+    "BlockRecord": {
+      "title": "BlockRecord",
+      "description": "User block entry keyed by {blockerUid}_{blockedUid}.",
+      "type": "object",
+      "properties": {
+        "blockerUid": { "type": "string" },
+        "blockedUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["blockerUid", "blockedUid", "createdAt"]
+    },
+    "ReportRecord": {
+      "title": "ReportRecord",
+      "description": "Safety moderation report.",
+      "type": "object",
+      "properties": {
+        "reporterUid": { "type": "string" },
+        "targetUid": { "type": "string" },
+        "category": { "type": "string" },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["SUBMITTED", "REVIEWED", "RESOLVED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reporterUid", "targetUid", "category", "details", "status", "createdAt"]
+    },
+    "DismissedProfile": {
+      "title": "DismissedProfile",
+      "description": "Dismissed discovery profile pointer.",
+      "type": "object",
+      "properties": {
+        "targetUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["targetUid", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/PrivateUser" },
+      "description": "Owner-only private user account and settings."
+    },
+    "/users/{uid}/dismissed/{targetUid}": {
+      "schema": { "$ref": "#/entities/DismissedProfile" },
+      "description": "Profiles dismissed via Not Interested."
+    },
+    "/users/{uid}/savedNotes/{noteId}": {
+      "schema": { "$ref": "#/entities/SavedNote" },
+      "description": "Owner-only saved post notes and cultural reflections."
+    },
+    "/publicProfiles/{uid}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Public discovery profiles with strict PII exclusion."
+    },
+    "/culturePosts/{postId}": {
+      "schema": { "$ref": "#/entities/CulturePost" },
+      "description": "Cultural thoughts and heritage photo moments."
+    },
+    "/culturePosts/{postId}/reactions/{uid}": {
+      "schema": { "$ref": "#/entities/PostReaction" },
+      "description": "Real-time heart reactions on cultural posts."
+    },
+    "/interestRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/InterestRequest" },
+      "description": "Outgoing and incoming interest requests."
+    },
+    "/connections/{connectionId}": {
+      "schema": { "$ref": "#/entities/Connection" },
+      "description": "Mutual connections created upon recipient approval."
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Mutual-consent conversation metadata."
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Realtime messages inside an approved conversation."
+    },
+    "/blocks/{blockId}": {
+      "schema": { "$ref": "#/entities/BlockRecord" },
+      "description": "User blocks keyed by blockerUid_blockedUid."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/ReportRecord" },
+      "description": "Safety reports."
+    }
+  }
+}

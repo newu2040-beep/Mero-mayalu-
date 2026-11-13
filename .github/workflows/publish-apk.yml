@@ -1,0 +1,87 @@
+name: Publish Debug APK Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'apk-distribution/app-debug.apk'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate prebuilt APK and checksum
+        id: validate
+        run: |
+          set -euo pipefail
+          APK_PATH="apk-distribution/app-debug.apk"
+          SHA_PATH="apk-distribution/app-debug.apk.sha256"
+
+          if [ ! -f "$APK_PATH" ] || [ ! -s "$APK_PATH" ]; then
+            echo "::error::Missing or empty $APK_PATH"
+            exit 1
+          fi
+
+          if [ ! -f "$SHA_PATH" ] || [ ! -s "$SHA_PATH" ]; then
+            echo "::error::Missing or empty $SHA_PATH"
+            exit 1
+          fi
+
+          (
+            cd apk-distribution
+            sha256sum -c app-debug.apk.sha256
+          )
+
+          unzip -tq "$APK_PATH"
+
+          APK_BYTES=$(stat -c '%s' "$APK_PATH")
+          APK_HUMAN=$(ls -lh "$APK_PATH" | awk '{print $5}')
+          APK_SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          RELEASE_TAG="debug-apk-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+
+          {
+            echo "apk_bytes=${APK_BYTES}"
+            echo "apk_human=${APK_HUMAN}"
+            echo "apk_sha256=${APK_SHA256}"
+            echo "release_tag=${RELEASE_TAG}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release with prebuilt APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.validate.outputs.release_tag }}
+          APK_SHA256: ${{ steps.validate.outputs.apk_sha256 }}
+          APK_BYTES: ${{ steps.validate.outputs.apk_bytes }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            "apk-distribution/app-debug.apk#app-debug.apk" \
+            --latest \
+            --title "Debug APK (${RELEASE_TAG})" \
+            --notes "Prebuilt debug APK compiled in Google AI Studio. SHA-256: \`${APK_SHA256}\` (${APK_BYTES} bytes)."
+
+      - name: Write release summary
+        env:
+          RELEASE_TAG: ${{ steps.validate.outputs.release_tag }}
+          APK_BYTES: ${{ steps.validate.outputs.apk_bytes }}
+          APK_HUMAN: ${{ steps.validate.outputs.apk_human }}
+          APK_SHA256: ${{ steps.validate.outputs.apk_sha256 }}
+        run: |
+          {
+            echo "### Debug APK Release Published"
+            echo ""
+            echo "- **Release Tag:** \`${RELEASE_TAG}\`"
+            echo "- **APK Size:** ${APK_HUMAN} (${APK_BYTES} bytes)"
+            echo "- **SHA-256:** \`${APK_SHA256}\`"
+            echo "- **GitHub Release Page:** https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+            echo "- **Direct Latest Download URL:** https://github.com/${{ github.repository }}/releases/latest/download/app-debug.apk"
+          } >> "$GITHUB_STEP_SUMMARY"

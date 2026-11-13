@@ -1,0 +1,563 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function pairId(a, b) {
+      return a < b ? (a + '_' + b) : (b + '_' + a);
+    }
+
+    function isBlockedEitherWay(a, b) {
+      return exists(/databases/$(database)/documents/blocks/$(a + '_' + b)) ||
+             exists(/databases/$(database)/documents/blocks/$(b + '_' + a));
+    }
+
+    // --- ENTITY VALIDATION BLUEPRINTS ---
+    function isValidPrivateUser(data) {
+      return data.keys().hasAll([
+               'uid', 'displayName', 'dateOfBirthPrivate', 'age', 'ageVerified', 'gender',
+               'language', 'theme', 'themeMode', 'useBikramSambat', 'reducedMotion',
+               'discoveryRadiusKm', 'notificationsEnabled', 'discreetNotifications',
+               'quietHoursEnabled', 'visibility', 'activeOutgoingRequestId',
+               'moderationStatus', 'acceptedTermsAt', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'uid', 'displayName', 'dateOfBirthPrivate', 'age', 'ageVerified', 'gender',
+               'language', 'theme', 'fontStyle', 'themeMode', 'useBikramSambat', 'reducedMotion',
+               'discoveryRadiusKm', 'notificationsEnabled', 'discreetNotifications',
+               'quietHoursEnabled', 'visibility', 'activeOutgoingRequestId',
+               'moderationStatus', 'acceptedTermsAt', 'createdAt', 'updatedAt'
+             ]) &&
+             data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 40 &&
+             data.dateOfBirthPrivate is string && data.dateOfBirthPrivate.size() == 10 &&
+             data.age is int && data.age >= 18 && data.age <= 100 &&
+             data.ageVerified == true &&
+             (data.gender == 'Male' || data.gender == 'Female') &&
+             (data.language == 'ne' || data.language == 'en') &&
+             data.theme is string && data.theme.size() >= 1 && data.theme.size() <= 40 &&
+             (!('fontStyle' in data) || (data.fontStyle is string && data.fontStyle.size() >= 1 && data.fontStyle.size() <= 40)) &&
+             (data.themeMode == 'system' || data.themeMode == 'light' || data.themeMode == 'dark') &&
+             data.useBikramSambat is bool &&
+             data.reducedMotion is bool &&
+             data.discoveryRadiusKm is int && data.discoveryRadiusKm >= 10 && data.discoveryRadiusKm <= 500 &&
+             data.notificationsEnabled is bool &&
+             data.discreetNotifications is bool &&
+             data.quietHoursEnabled is bool &&
+             (data.visibility == 'visible' || data.visibility == 'paused') &&
+             data.activeOutgoingRequestId is string && data.activeOutgoingRequestId.size() <= 128 &&
+             (data.moderationStatus == 'active' || data.moderationStatus == 'restricted' || data.moderationStatus == 'suspended') &&
+             data.acceptedTermsAt is timestamp && data.acceptedTermsAt <= request.time &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPublicProfile(data) {
+      return data.keys().hasAll([
+               'uid', 'displayName', 'age', 'ageVerified', 'gender', 'bio', 'lookingFor',
+               'photoDataList', 'interests', 'hobbies', 'prompts', 'culturalBadge',
+               'province', 'district', 'municipality', 'publicLocationLabel',
+               'visibility', 'moderationStatus', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'uid', 'displayName', 'age', 'ageVerified', 'gender', 'bio', 'lookingFor',
+               'photoDataList', 'bannerData', 'interests', 'hobbies', 'prompts', 'culturalBadge',
+               'province', 'district', 'municipality', 'publicLocationLabel',
+               'visibility', 'moderationStatus', 'createdAt', 'updatedAt'
+             ]) &&
+             data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 40 &&
+             data.age is int && data.age >= 18 && data.age <= 100 &&
+             data.ageVerified == true &&
+             (data.gender == 'Male' || data.gender == 'Female') &&
+             data.bio is string && data.bio.size() <= 300 &&
+             data.lookingFor is string && data.lookingFor.size() <= 150 &&
+             data.photoDataList is list && data.photoDataList.size() >= 1 && data.photoDataList.size() <= 4 &&
+             data.photoDataList[0] is string && data.photoDataList[0].size() >= 1 && data.photoDataList[0].size() <= 250000 &&
+             (!('bannerData' in data) || (data.bannerData is string && data.bannerData.size() <= 250000)) &&
+             data.interests is list && data.interests.size() <= 16 && (data.interests.size() == 0 || data.interests[0] is string) &&
+             data.hobbies is list && data.hobbies.size() <= 12 && (data.hobbies.size() == 0 || data.hobbies[0] is string) &&
+             data.prompts is list && data.prompts.size() <= 6 && (data.prompts.size() == 0 || data.prompts[0] is string) &&
+             data.culturalBadge is string && data.culturalBadge.size() <= 60 &&
+             data.province is string && data.province.size() >= 1 && data.province.size() <= 60 &&
+             data.district is string && data.district.size() >= 1 && data.district.size() <= 60 &&
+             data.municipality is string && data.municipality.size() <= 60 &&
+             data.publicLocationLabel is string && data.publicLocationLabel.size() >= 1 && data.publicLocationLabel.size() <= 80 &&
+             (data.visibility == 'visible' || data.visibility == 'paused') &&
+             (data.moderationStatus == 'active' || data.moderationStatus == 'restricted' || data.moderationStatus == 'suspended') &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCulturePost(data) {
+      return data.keys().hasAll([
+               'authorUid', 'authorName', 'authorPhoto', 'authorLocation',
+               'thoughtText', 'imageData', 'culturalTag', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'authorUid', 'authorName', 'authorPhoto', 'authorLocation',
+               'thoughtText', 'imageData', 'culturalTag', 'createdAt', 'updatedAt'
+             ]) &&
+             isValidId(data.authorUid) &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+             data.authorPhoto is string && data.authorPhoto.size() <= 250000 &&
+             data.authorLocation is string && data.authorLocation.size() <= 80 &&
+             data.thoughtText is string && data.thoughtText.size() <= 600 &&
+             data.imageData is string && data.imageData.size() <= 250000 &&
+             (data.thoughtText.size() >= 1 || data.imageData.size() >= 1) &&
+             data.culturalTag is string && data.culturalTag.size() <= 60 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSavedNote(data) {
+      return data.keys().hasAll([
+               'title', 'noteText', 'sourcePostId', 'sourceAuthorName',
+               'sourceExcerpt', 'imageData', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'title', 'noteText', 'sourcePostId', 'sourceAuthorName',
+               'sourceExcerpt', 'imageData', 'createdAt', 'updatedAt'
+             ]) &&
+             data.title is string && data.title.size() <= 100 &&
+             data.noteText is string && data.noteText.size() >= 1 && data.noteText.size() <= 1000 &&
+             data.sourcePostId is string && data.sourcePostId.size() <= 128 &&
+             data.sourceAuthorName is string && data.sourceAuthorName.size() <= 60 &&
+             data.sourceExcerpt is string && data.sourceExcerpt.size() <= 300 &&
+             data.imageData is string && data.imageData.size() <= 250000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidInterestRequest(data) {
+      return data.keys().hasAll([
+               'fromUid', 'toUid', 'fromName', 'fromPhoto', 'fromLocation',
+               'toName', 'toPhoto', 'toLocation', 'status', 'createdAt', 'updatedAt', 'expiresAt'
+             ]) &&
+             data.keys().hasOnly([
+               'fromUid', 'toUid', 'fromName', 'fromPhoto', 'fromLocation',
+               'toName', 'toPhoto', 'toLocation', 'status', 'createdAt', 'updatedAt', 'expiresAt', 'decisionAt'
+             ]) &&
+             isValidId(data.fromUid) && isValidId(data.toUid) && data.fromUid != data.toUid &&
+             data.fromName is string && data.fromName.size() >= 1 && data.fromName.size() <= 60 &&
+             data.fromPhoto is string && data.fromPhoto.size() <= 250000 &&
+             data.fromLocation is string && data.fromLocation.size() <= 80 &&
+             data.toName is string && data.toName.size() >= 1 && data.toName.size() <= 60 &&
+             data.toPhoto is string && data.toPhoto.size() <= 250000 &&
+             data.toLocation is string && data.toLocation.size() <= 80 &&
+             (data.status == 'PENDING' || data.status == 'APPROVED' || data.status == 'DECLINED' || data.status == 'WITHDRAWN' || data.status == 'EXPIRED') &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time &&
+             data.expiresAt is timestamp &&
+             (!('decisionAt' in data) || (data.decisionAt is timestamp && data.decisionAt <= request.time));
+    }
+
+    function isValidConnection(data) {
+      return data.keys().hasAll(['memberUids', 'sourceRequestId', 'conversationId', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['memberUids', 'sourceRequestId', 'conversationId', 'status', 'createdAt', 'updatedAt']) &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             data.memberUids[0] is string && data.memberUids[1] is string &&
+             data.memberUids[0] < data.memberUids[1] &&
+             isValidId(data.sourceRequestId) &&
+             isValidId(data.conversationId) &&
+             (data.status == 'ACTIVE' || data.status == 'BLOCKED' || data.status == 'ENDED') &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll([
+               'memberUids', 'userAId', 'userAName', 'userAPhoto', 'userBId', 'userBName',
+               'userBPhoto', 'connectionId', 'status', 'lastMessageText', 'lastMessageAt',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'memberUids', 'userAId', 'userAName', 'userAPhoto', 'userBId', 'userBName',
+               'userBPhoto', 'connectionId', 'status', 'lastMessageText', 'lastMessageAt',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             data.memberUids[0] is string && data.memberUids[1] is string &&
+             data.memberUids[0] < data.memberUids[1] &&
+             data.userAId == data.memberUids[0] &&
+             data.userBId == data.memberUids[1] &&
+             data.userAName is string && data.userAName.size() <= 60 &&
+             data.userAPhoto is string && data.userAPhoto.size() <= 250000 &&
+             data.userBName is string && data.userBName.size() <= 60 &&
+             data.userBPhoto is string && data.userBPhoto.size() <= 250000 &&
+             isValidId(data.connectionId) &&
+             (data.status == 'ACTIVE' || data.status == 'MUTED' || data.status == 'BLOCKED') &&
+             data.lastMessageText is string && data.lastMessageText.size() <= 200 &&
+             data.lastMessageAt is timestamp && data.lastMessageAt <= request.time &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderUid', 'memberUids', 'type', 'text', 'mediaData', 'audioDurationSec', 'waveform', 'moderationStatus', 'createdAt']) &&
+             data.keys().hasOnly(['senderUid', 'memberUids', 'type', 'text', 'mediaData', 'audioDurationSec', 'waveform', 'moderationStatus', 'createdAt']) &&
+             isValidId(data.senderUid) &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             data.memberUids[0] is string && data.memberUids[1] is string &&
+             (data.type == 'TEXT' || data.type == 'IMAGE' || data.type == 'VOICE') &&
+             data.text is string && data.text.size() <= 2000 &&
+             data.mediaData is string && data.mediaData.size() <= 250000 &&
+             data.audioDurationSec is int && data.audioDurationSec >= 0 && data.audioDurationSec <= 60 &&
+             data.waveform is list && data.waveform.size() <= 40 &&
+             data.moderationStatus == 'active' &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             ((data.type == 'TEXT' && data.text.size() >= 1) ||
+              (data.type == 'IMAGE' && data.mediaData.size() >= 1) ||
+              (data.type == 'VOICE' && data.mediaData.size() >= 1 && data.audioDurationSec >= 1));
+    }
+
+    function isValidBlock(data) {
+      return data.keys().hasAll(['blockerUid', 'blockedUid', 'createdAt']) &&
+             data.keys().hasOnly(['blockerUid', 'blockedUid', 'createdAt']) &&
+             isValidId(data.blockerUid) && isValidId(data.blockedUid) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['reporterUid', 'targetUid', 'category', 'details', 'status', 'createdAt']) &&
+             data.keys().hasOnly(['reporterUid', 'targetUid', 'category', 'details', 'status', 'createdAt']) &&
+             isValidId(data.reporterUid) && isValidId(data.targetUid) &&
+             (data.category == 'HARASSMENT' || data.category == 'FAKE_PROFILE' || data.category == 'UNDERAGE' ||
+              data.category == 'INAPPROPRIATE_CONTENT' || data.category == 'SCAM' || data.category == 'OTHER') &&
+             data.details is string && data.details.size() <= 500 &&
+             data.status == 'SUBMITTED' &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // --- COLLECTION RULES ---
+
+    // 1. Private User Account & Preferences
+    match /users/{uid} {
+      allow get, list: if isSignedIn() && request.auth.uid == uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(uid) &&
+                       request.auth.uid == uid &&
+                       incoming().uid == uid &&
+                       incoming().activeOutgoingRequestId == '' &&
+                       incoming().moderationStatus == 'active' &&
+                       isValidPrivateUser(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(uid) &&
+                       request.auth.uid == uid &&
+                       isValidPrivateUser(incoming()) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().acceptedTermsAt == existing().acceptedTermsAt &&
+                       incoming().moderationStatus == existing().moderationStatus &&
+                       (
+                         // Action A: Normal preference/profile update without altering activeOutgoingRequestId
+                          (incoming().activeOutgoingRequestId == existing().activeOutgoingRequestId &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'displayName', 'language', 'theme', 'fontStyle', 'themeMode', 'useBikramSambat',
+                            'reducedMotion', 'discoveryRadiusKm', 'notificationsEnabled',
+                            'discreetNotifications', 'quietHoursEnabled', 'visibility', 'updatedAt'
+                          ])) ||
+                         // Action B: Setting activeOutgoingRequestId atomically when creating a new PENDING request
+                         (existing().activeOutgoingRequestId == '' &&
+                          incoming().activeOutgoingRequestId != '' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['activeOutgoingRequestId', 'updatedAt']) &&
+                          existsAfter(/databases/$(database)/documents/interestRequests/$(incoming().activeOutgoingRequestId)) &&
+                          getAfter(/databases/$(database)/documents/interestRequests/$(incoming().activeOutgoingRequestId)).data.fromUid == request.auth.uid &&
+                          getAfter(/databases/$(database)/documents/interestRequests/$(incoming().activeOutgoingRequestId)).data.status == 'PENDING') ||
+                         // Action C: Clearing activeOutgoingRequestId when request is resolved or expired
+                         (existing().activeOutgoingRequestId != '' &&
+                          incoming().activeOutgoingRequestId == '' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['activeOutgoingRequestId', 'updatedAt']) &&
+                          (
+                            !exists(/databases/$(database)/documents/interestRequests/$(existing().activeOutgoingRequestId)) ||
+                            getAfter(/databases/$(database)/documents/interestRequests/$(existing().activeOutgoingRequestId)).data.status != 'PENDING' ||
+                            get(/databases/$(database)/documents/interestRequests/$(existing().activeOutgoingRequestId)).data.expiresAt < request.time
+                          ))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(uid) && request.auth.uid == uid;
+
+      match /dismissed/{targetUid} {
+        allow get, list: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn() && request.auth.uid == uid && isValidId(targetUid) &&
+                         incoming().targetUid == targetUid &&
+                         incoming().keys().hasAll(['targetUid', 'createdAt']) &&
+                         incoming().keys().hasOnly(['targetUid', 'createdAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time;
+        allow delete: if isSignedIn() && request.auth.uid == uid && isValidId(targetUid);
+      }
+
+      match /savedNotes/{noteId} {
+        allow get, list: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn() && request.auth.uid == uid && isValidId(noteId) &&
+                         isValidSavedNote(incoming());
+        allow update: if isSignedIn() && request.auth.uid == uid && isValidId(noteId) &&
+                         isValidSavedNote(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'title', 'noteText', 'sourceExcerpt', 'imageData', 'updatedAt'
+                         ]);
+        allow delete: if isSignedIn() && request.auth.uid == uid && isValidId(noteId);
+      }
+    }
+
+    // 2. Public Discovery Profiles (strictly non-PII)
+    match /publicProfiles/{uid} {
+      allow list: if isSignedIn() &&
+                     resource.data.visibility == 'visible' &&
+                     resource.data.ageVerified == true &&
+                     resource.data.moderationStatus == 'active' &&
+                     (resource.data.gender == 'Male' || resource.data.gender == 'Female');
+
+      allow get: if isSignedIn() && isValidId(uid) && (
+                    request.auth.uid == uid ||
+                    (
+                      resource.data.visibility == 'visible' &&
+                      resource.data.ageVerified == true &&
+                      resource.data.moderationStatus == 'active' &&
+                      exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ageVerified == true &&
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.gender != resource.data.gender &&
+                      !isBlockedEitherWay(request.auth.uid, uid)
+                    )
+                  );
+
+      allow create: if isSignedIn() &&
+                       isValidId(uid) &&
+                       request.auth.uid == uid &&
+                       incoming().uid == uid &&
+                       incoming().moderationStatus == 'active' &&
+                       isValidPublicProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(uid) &&
+                       request.auth.uid == uid &&
+                       isValidPublicProfile(incoming()) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().moderationStatus == existing().moderationStatus &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'bio', 'lookingFor', 'photoDataList', 'bannerData', 'interests',
+                         'hobbies', 'prompts', 'culturalBadge', 'province', 'district',
+                         'municipality', 'publicLocationLabel', 'visibility', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(uid) && request.auth.uid == uid;
+    }
+
+    // 3. Interest Requests (One Active Outgoing + Recipient-Only Approval)
+    match /interestRequests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) &&
+                    (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+
+      allow list: if isSignedIn() &&
+                     (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidInterestRequest(incoming()) &&
+                       incoming().fromUid == request.auth.uid &&
+                       incoming().toUid != request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       !('decisionAt' in incoming()) &&
+                       incoming().expiresAt > request.time &&
+                       !isBlockedEitherWay(request.auth.uid, incoming().toUid) &&
+                       exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                       exists(/databases/$(database)/documents/publicProfiles/$(incoming().toUid)) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ageVerified == true &&
+                       get(/databases/$(database)/documents/publicProfiles/$(incoming().toUid)).data.ageVerified == true &&
+                       get(/databases/$(database)/documents/publicProfiles/$(incoming().toUid)).data.visibility == 'visible' &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.gender !=
+                         get(/databases/$(database)/documents/publicProfiles/$(incoming().toUid)).data.gender &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.activeOutgoingRequestId == '' &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.activeOutgoingRequestId == requestId;
+
+      allow update: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidInterestRequest(incoming()) &&
+                       existing().status == 'PENDING' &&
+                       incoming().fromUid == existing().fromUid &&
+                       incoming().toUid == existing().toUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().expiresAt == existing().expiresAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'decisionAt']) &&
+                       'decisionAt' in incoming() &&
+                       (
+                         // Recipient Approves (must atomically create connection + conversation)
+                         (request.auth.uid == existing().toUid &&
+                          incoming().status == 'APPROVED' &&
+                          !isBlockedEitherWay(existing().fromUid, existing().toUid) &&
+                          existsAfter(/databases/$(database)/documents/connections/$(pairId(existing().fromUid, existing().toUid))) &&
+                          existsAfter(/databases/$(database)/documents/conversations/$(pairId(existing().fromUid, existing().toUid)))) ||
+                         // Recipient Declines
+                         (request.auth.uid == existing().toUid &&
+                          incoming().status == 'DECLINED') ||
+                         // Sender Withdraws
+                         (request.auth.uid == existing().fromUid &&
+                          incoming().status == 'WITHDRAWN')
+                       );
+    }
+
+    // 4. Mutual Connections
+    match /connections/{connectionId} {
+      allow get: if isSignedIn() && isValidId(connectionId) && (request.auth.uid in resource.data.memberUids);
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.memberUids);
+
+      allow create: if isSignedIn() &&
+                       isValidId(connectionId) &&
+                       isValidConnection(incoming()) &&
+                       (request.auth.uid in incoming().memberUids) &&
+                       connectionId == pairId(incoming().memberUids[0], incoming().memberUids[1]) &&
+                       incoming().conversationId == connectionId &&
+                       incoming().status == 'ACTIVE' &&
+                       !isBlockedEitherWay(incoming().memberUids[0], incoming().memberUids[1]) &&
+                       existsAfter(/databases/$(database)/documents/interestRequests/$(incoming().sourceRequestId)) &&
+                       getAfter(/databases/$(database)/documents/interestRequests/$(incoming().sourceRequestId)).data.toUid == request.auth.uid &&
+                       getAfter(/databases/$(database)/documents/interestRequests/$(incoming().sourceRequestId)).data.status == 'APPROVED' &&
+                       (getAfter(/databases/$(database)/documents/interestRequests/$(incoming().sourceRequestId)).data.fromUid in incoming().memberUids) &&
+                       (getAfter(/databases/$(database)/documents/interestRequests/$(incoming().sourceRequestId)).data.toUid in incoming().memberUids);
+
+      allow update: if isSignedIn() &&
+                       isValidId(connectionId) &&
+                       isValidConnection(incoming()) &&
+                       (request.auth.uid in existing().memberUids) &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().sourceRequestId == existing().sourceRequestId &&
+                       incoming().conversationId == existing().conversationId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (incoming().status == 'ENDED' || incoming().status == 'BLOCKED') &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+    }
+
+    // 5. Conversations & Messages (Mutual-Consent Only)
+    match /conversations/{conversationId} {
+      allow get: if isSignedIn() && isValidId(conversationId) && (request.auth.uid in resource.data.memberUids);
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.memberUids);
+
+      allow create: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       isValidConversation(incoming()) &&
+                       (request.auth.uid in incoming().memberUids) &&
+                       incoming().connectionId == conversationId &&
+                       existsAfter(/databases/$(database)/documents/connections/$(conversationId)) &&
+                       getAfter(/databases/$(database)/documents/connections/$(conversationId)).data.status == 'ACTIVE';
+
+      allow update: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       isValidConversation(incoming()) &&
+                       (request.auth.uid in existing().memberUids) &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().userAId == existing().userAId &&
+                       incoming().userBId == existing().userBId &&
+                       incoming().connectionId == existing().connectionId &&
+                       incoming().createdAt == existing().createdAt &&
+                       !isBlockedEitherWay(existing().memberUids[0], existing().memberUids[1]) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageText', 'lastMessageAt', 'updatedAt', 'status']);
+
+      match /messages/{messageId} {
+        allow get: if isSignedIn() && isValidId(conversationId) && isValidId(messageId) && (request.auth.uid in resource.data.memberUids);
+        allow list: if isSignedIn() && (request.auth.uid in resource.data.memberUids);
+
+        allow create: if isSignedIn() &&
+                         isValidId(conversationId) &&
+                         isValidId(messageId) &&
+                         isValidMessage(incoming()) &&
+                         incoming().senderUid == request.auth.uid &&
+                         (request.auth.uid in incoming().memberUids) &&
+                         exists(/databases/$(database)/documents/connections/$(conversationId)) &&
+                         get(/databases/$(database)/documents/connections/$(conversationId)).data.status == 'ACTIVE' &&
+                         get(/databases/$(database)/documents/connections/$(conversationId)).data.memberUids == incoming().memberUids &&
+                         !isBlockedEitherWay(incoming().memberUids[0], incoming().memberUids[1]);
+      }
+    }
+
+    // 6. Blocks
+    match /blocks/{blockId} {
+      allow get: if isSignedIn() && isValidId(blockId) && resource.data.blockerUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.blockerUid == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidId(blockId) &&
+                       isValidBlock(incoming()) &&
+                       blockId == (request.auth.uid + '_' + incoming().blockedUid) &&
+                       incoming().blockerUid == request.auth.uid &&
+                       incoming().blockedUid != request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(blockId) && resource.data.blockerUid == request.auth.uid;
+    }
+
+    // 7. Safety Reports
+    match /reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && resource.data.reporterUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.reporterUid == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       isValidReport(incoming()) &&
+                       incoming().reporterUid == request.auth.uid &&
+                       incoming().targetUid != request.auth.uid &&
+                       incoming().status == 'SUBMITTED';
+    }
+
+    // 8. Cultural Moments & Thoughts Feed (Center Lotus Hub)
+    match /culturePosts/{postId} {
+      allow get: if isSignedIn() && isValidId(postId) &&
+                    !isBlockedEitherWay(request.auth.uid, resource.data.authorUid);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(postId) &&
+                       isValidCulturePost(incoming()) &&
+                       incoming().authorUid == request.auth.uid;
+
+      allow update: if isSignedIn() &&
+                       isValidId(postId) &&
+                       isValidCulturePost(incoming()) &&
+                       existing().authorUid == request.auth.uid &&
+                       incoming().authorUid == existing().authorUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'thoughtText', 'imageData', 'culturalTag', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() &&
+                       isValidId(postId) &&
+                       resource.data.authorUid == request.auth.uid;
+
+      match /reactions/{uid} {
+        allow get, list: if isSignedIn();
+        allow create: if isSignedIn() &&
+                         isValidId(postId) &&
+                         isValidId(uid) &&
+                         request.auth.uid == uid &&
+                         incoming().keys().hasAll(['userUid', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userUid', 'createdAt']) &&
+                         incoming().userUid == uid &&
+                         incoming().createdAt is timestamp &&
+                         incoming().createdAt <= request.time &&
+                         exists(/databases/$(database)/documents/culturePosts/$(postId));
+        allow delete: if isSignedIn() && isValidId(postId) && request.auth.uid == uid;
+      }
+    }
+  }
+}
