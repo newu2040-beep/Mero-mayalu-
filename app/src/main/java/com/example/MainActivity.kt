@@ -390,6 +390,7 @@ private fun AuthenticatedShell(
     val culturePlacesState by viewModel.culturePlacesState.collectAsStateWithLifecycle()
     val culturePostsState by viewModel.culturePosts.collectAsStateWithLifecycle()
     val savedNotesState by viewModel.savedNotes.collectAsStateWithLifecycle()
+    val myInviteCode by viewModel.myInviteCode.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val lang = localPrefs.language
@@ -503,7 +504,7 @@ private fun AuthenticatedShell(
                 localPrefs = localPrefs,
                 privateUser = session.privateUser,
                 blockedUsers = blockedUsers,
-                buildExportJson = viewModel::buildExportJson,
+                buildExportData = viewModel::buildExportData,
                 onBack = { subRoute = SubScreenRoute.NONE },
                 onSelectLanguage = viewModel::updateLanguage,
                 onSelectThemeCatalog = viewModel::updateThemeCatalog,
@@ -549,6 +550,10 @@ private fun AuthenticatedShell(
                         audioDurationSec = note.durationSec,
                         waveform = note.waveform
                     )
+                },
+                onDeleteMessage = { conv, msg ->
+                    val toast = if (lang == AppLanguage.NEPALI) "सन्देश स्थायी रूपमा मेटियो।" else "Message permanently deleted."
+                    viewModel.deleteChatMessage(conv.id, msg, toast)
                 },
                 onToggleMute = { conv ->
                     viewModel.toggleMuteConversation(conv.id, conv.status == "MUTED")
@@ -694,7 +699,11 @@ private fun AuthenticatedShell(
                                 val msg = if (lang == AppLanguage.NEPALI) "प्रयोगकर्ता ब्लक गरियो।" else "User blocked."
                                 viewModel.blockUser(profile.uid, msg)
                             },
-                            onRetry = viewModel::retryDiscovery,
+                            onRetry = {
+                                viewModel.retryDiscovery()
+                                val msg = if (lang == AppLanguage.NEPALI) "गृह फिड ताजा गरियो।" else "Feed refreshed!"
+                                viewModel.showToast(msg)
+                            },
                             bottomPadding = bottomContentPadding
                         )
                     }
@@ -709,13 +718,25 @@ private fun AuthenticatedShell(
                             notesState = savedNotesState,
                             isBusy = isActionBusy,
                             observeReactions = viewModel::observePostReactions,
+                            observePollVotes = viewModel::observePollVotes,
                             onToggleReaction = viewModel::togglePostReaction,
-                            onCreatePost = { thought, img, tag, onDone ->
+                            onVotePoll = viewModel::voteOnPoll,
+                            onCreatePost = { thought, img, tag, postType, pollOptions, scheduledAt, onDone ->
+                                val isFutureSchedule = scheduledAt != null &&
+                                    scheduledAt.toDate().time > System.currentTimeMillis()
+                                val toast = if (isFutureSchedule) {
+                                    if (lang == AppLanguage.NEPALI) "तपाईंको पोस्ट तालिका गरियो!" else "Your post has been scheduled!"
+                                } else {
+                                    s.postPublishedToast
+                                }
                                 viewModel.createCulturePost(
                                     thoughtText = thought,
                                     imageData = img,
                                     culturalTag = tag,
-                                    successToast = s.postPublishedToast,
+                                    postType = postType,
+                                    pollOptions = pollOptions,
+                                    scheduledAt = scheduledAt,
+                                    successToast = toast,
                                     onDone = onDone
                                 )
                             },
@@ -750,6 +771,7 @@ private fun AuthenticatedShell(
                             incomingState = incomingState,
                             outgoingState = outgoingState,
                             conversationsState = conversationsState,
+                            myInviteCode = myInviteCode,
                             isBusy = isActionBusy,
                             celebrationPair = celebrationPair,
                             onDismissCelebration = viewModel::clearCelebration,
@@ -765,6 +787,14 @@ private fun AuthenticatedShell(
                                 activeConversationId = convId
                                 subRoute = SubScreenRoute.CHAT
                             },
+                            onGenerateInviteCode = {
+                                val toast = if (lang == AppLanguage.NEPALI) "नयाँ गोप्य कोड बन्यो" else "Secret invite code created"
+                                viewModel.generateOrRotateInviteCode(toast)
+                            },
+                            onRedeemInviteCode = { code, onDone ->
+                                viewModel.redeemInviteCode(code, s.activeRequestBanner, onDone)
+                            },
+                            onShowToast = viewModel::showToast,
                             bottomPadding = bottomContentPadding
                         )
                     }
@@ -789,6 +819,14 @@ private fun AuthenticatedShell(
                             onUpdateBanner = { bannerData ->
                                 val msg = if (lang == AppLanguage.NEPALI) "ब्यानर अद्यावधिक गरियो।" else "Profile banner updated!"
                                 viewModel.updateBannerData(bannerData, msg)
+                            },
+                            onUpdateProfilePhotos = { photos ->
+                                val msg = if (photos.isEmpty()) {
+                                    if (lang == AppLanguage.NEPALI) "प्रोफाइल फोटो हटाइयो (डिफल्ट अवतार सक्रिय)।" else "Profile photo removed (using default avatar)."
+                                } else {
+                                    if (lang == AppLanguage.NEPALI) "प्रोफाइल फोटो सुरक्षित गरियो!" else "Profile photo saved!"
+                                }
+                                viewModel.updateProfilePhotos(photos, msg)
                             },
                             onAddCustomInterest = { tag ->
                                 val msg = if (lang == AppLanguage.NEPALI) "रुचि थपियो।" else "Interest added!"

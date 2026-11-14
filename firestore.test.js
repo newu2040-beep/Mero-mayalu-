@@ -473,3 +473,170 @@ test("Culture posts, reactions, saved notes ownership, fontStyle & bannerData", 
     })
   );
 });
+
+test("Message & voice delete by sender only, HD images, quick polls, scheduled posts & secret inviteCodes", async () => {
+  await seedUser(MALE_UID, "Male");
+  await seedUser(FEMALE_UID, "Female");
+
+  const maleDb = testEnv.authenticatedContext(MALE_UID).firestore();
+  const femaleDb = testEnv.authenticatedContext(FEMALE_UID).firestore();
+  const outsiderDb = testEnv.authenticatedContext(FEMALE_OTHER_UID).firestore();
+
+  // HD banner (>250KB, <700KB) allowed on publicProfiles
+  const hdBanner = "data:image/jpeg;base64," + "A".repeat(420000);
+  await assertSucceeds(
+    maleDb.collection("publicProfiles").doc(MALE_UID).update({
+      bannerData: hdBanner,
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Establish active mutual conversation so we can test permanent voice/text message deletion
+  const pid = pairId(MALE_UID, FEMALE_UID);
+  const members = sortedPair(MALE_UID, FEMALE_UID);
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection("connections").doc(pid).set({
+      memberUids: members,
+      sourceRequestId: "req_del",
+      conversationId: pid,
+      status: "ACTIVE",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    await db.collection("conversations").doc(pid).set({
+      memberUids: members,
+      userAId: members[0],
+      userAName: "Female",
+      userAPhoto: "",
+      userBId: members[1],
+      userBName: "Male",
+      userBPhoto: "",
+      connectionId: pid,
+      status: "ACTIVE",
+      lastMessageText: "",
+      lastMessageAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  await assertSucceeds(
+    maleDb.collection("conversations").doc(pid).collection("messages").doc("voice_1").set({
+      senderUid: MALE_UID,
+      memberUids: members,
+      type: "VOICE",
+      text: "",
+      mediaData: "data:audio/mp4;base64,AAAA",
+      audioDurationSec: 5,
+      waveform: [20, 40, 60],
+      moderationStatus: "active",
+      createdAt: serverTimestamp(),
+    })
+  );
+
+  // Partner cannot delete Male's voice message; Male can permanently delete his own voice message
+  await assertFails(
+    femaleDb.collection("conversations").doc(pid).collection("messages").doc("voice_1").delete()
+  );
+  await assertSucceeds(
+    maleDb.collection("conversations").doc(pid).collection("messages").doc("voice_1").delete()
+  );
+
+  // Quick Poll + Scheduled future post + HD post photo
+  await assertSucceeds(
+    maleDb.collection("culturePosts").doc("poll_1").set({
+      authorUid: MALE_UID,
+      authorName: "Rohan",
+      authorPhoto: "",
+      authorLocation: "Kathmandu",
+      thoughtText: "Best evening hangout spot in Patan?",
+      imageData: hdBanner,
+      culturalTag: "Quick Poll",
+      postType: "POLL",
+      pollOptions: ["Patan Durbar", "Jhamsikhel Chiya"],
+      scheduledAt: futureTimestamp(2),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Female can cast pollVote as herself, not as Male
+  await assertSucceeds(
+    femaleDb.collection("culturePosts").doc("poll_1").collection("pollVotes").doc(FEMALE_UID).set({
+      userUid: FEMALE_UID,
+      optionIndex: 1,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    femaleDb.collection("culturePosts").doc("poll_1").collection("pollVotes").doc(MALE_UID).set({
+      userUid: MALE_UID,
+      optionIndex: 0,
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Secret Invite Code: Creator creates & lists; User knowing exact code can get; Unauthorized list denied
+  await assertSucceeds(
+    femaleDb.collection("inviteCodes").doc("MM884920").set({
+      code: "MM884920",
+      creatorUid: FEMALE_UID,
+      creatorName: "Srijana",
+      creatorPhoto: "",
+      creatorLocation: "Kathmandu",
+      creatorGender: "Female",
+      active: true,
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(maleDb.collection("inviteCodes").doc("MM884920").get());
+  await assertFails(maleDb.collection("inviteCodes").get());
+  await assertFails(
+    outsiderDb.collection("inviteCodes").doc("MMFORGED").set({
+      code: "MMFORGED",
+      creatorUid: FEMALE_UID,
+      creatorName: "Spoof",
+      creatorPhoto: "",
+      creatorLocation: "Kathmandu",
+      creatorGender: "Female",
+      active: true,
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test("Optional profile pictures: user can create profile with 0 photos and later add/remove photos", async () => {
+  const newMaleUid = "male_optional_photo";
+  const maleDb = testEnv.authenticatedContext(newMaleUid).firestore();
+
+  const privateDoc = makePrivateUser(newMaleUid, "Male");
+  const publicDocNoPhotos = {
+    ...makePublicProfile(newMaleUid, "Male"),
+    photoDataList: [],
+  };
+
+  // Creating private user + public profile with empty photoDataList succeeds
+  const batch = maleDb.batch();
+  batch.set(maleDb.collection("users").doc(newMaleUid), privateDoc);
+  batch.set(maleDb.collection("publicProfiles").doc(newMaleUid), publicDocNoPhotos);
+  await assertSucceeds(batch.commit());
+
+  // Updating photoDataList to add a photo succeeds
+  await assertSucceeds(
+    maleDb.collection("publicProfiles").doc(newMaleUid).update({
+      photoDataList: ["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/"],
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Removing all photos back to empty array succeeds
+  await assertSucceeds(
+    maleDb.collection("publicProfiles").doc(newMaleUid).update({
+      photoDataList: [],
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+

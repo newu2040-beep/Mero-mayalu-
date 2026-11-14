@@ -1,5 +1,8 @@
 package com.example.feature.profile
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -7,13 +10,16 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Shield
@@ -32,8 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.example.core.designsystem.LocalMeroColors
 import com.example.core.designsystem.MeroBannerImage
@@ -306,15 +314,52 @@ fun HelpSafetyDialog(language: AppLanguage, onDismiss: () -> Unit) {
 fun AboutAppDialog(language: AppLanguage, onDismiss: () -> Unit) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val context = LocalContext.current
+    val creditUrl = "https://www.facebook.com/share/1EkV9EUs23/"
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = colors.surface,
-        title = { Text(s.aboutApp, style = MeroType.Heading.copy(color = colors.text)) },
+        title = { Text("${s.aboutApp} · v5.6", style = MeroType.Heading.copy(color = colors.text)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm)) {
-                Text(text = "${s.appName} — ${s.tagline}", style = MeroType.Body.copy(color = colors.text, fontWeight = FontWeight.Bold))
+                Text(
+                    text = "${s.appName} (v5.6) — ${s.tagline}",
+                    style = MeroType.Body.copy(color = colors.text, fontWeight = FontWeight.Bold)
+                )
                 Text(text = s.privacyNoticeSummary, style = MeroType.Body.copy(color = colors.textMuted))
-                Text(text = s.developerCredit, style = MeroType.Caption.copy(color = colors.primary))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clip(RoundedCornerShape(MeroRadius.small))
+                        .clickable {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(creditUrl))
+                                )
+                            }
+                        }
+                        .padding(vertical = MeroSpacing.sm)
+                        .testTag("about_developer_credit_link")
+                ) {
+                    Text(
+                        text = s.developerCredit,
+                        style = MeroType.Caption.copy(
+                            color = colors.primary,
+                            fontWeight = FontWeight.Medium,
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = creditUrl,
+                        tint = colors.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         },
         confirmButton = {

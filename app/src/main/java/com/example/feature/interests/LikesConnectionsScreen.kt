@@ -1,5 +1,8 @@
 package com.example.feature.interests
 
+import android.content.Intent
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,33 +11,50 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,17 +67,22 @@ import com.example.core.designsystem.MeroCard
 import com.example.core.designsystem.MeroChip
 import com.example.core.designsystem.MeroEmptyState
 import com.example.core.designsystem.MeroErrorState
+import com.example.core.designsystem.MeroIconButton
+import com.example.core.designsystem.MeroInput
 import com.example.core.designsystem.MeroLoadingState
+import com.example.core.designsystem.MeroRadius
 import com.example.core.designsystem.MeroSecondaryButton
 import com.example.core.designsystem.MeroSpacing
 import com.example.core.designsystem.MeroTopBar
 import com.example.core.designsystem.MeroType
 import com.example.core.domain.Conversation
 import com.example.core.domain.InterestRequest
+import com.example.core.domain.InviteCodeRecord
 import com.example.core.domain.UiState
 import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LikesConnectionsScreen(
     currentUid: String,
@@ -65,6 +90,7 @@ fun LikesConnectionsScreen(
     incomingState: UiState<List<InterestRequest>>,
     outgoingState: UiState<List<InterestRequest>>,
     conversationsState: UiState<List<Conversation>>,
+    myInviteCode: InviteCodeRecord?,
     isBusy: Boolean,
     celebrationPair: Pair<String, String>?,
     onDismissCelebration: () -> Unit,
@@ -73,18 +99,85 @@ fun LikesConnectionsScreen(
     onWithdraw: (String) -> Unit,
     onOpenProfileUid: (String) -> Unit,
     onOpenChat: (String) -> Unit,
+    onGenerateInviteCode: () -> Unit,
+    onRedeemInviteCode: (String, onSuccessDone: () -> Unit) -> Unit,
+    onShowToast: (String) -> Unit,
     bottomPadding: Dp
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var showInviteSheet by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
     ) {
-        MeroTopBar(title = s.navLikes)
+        MeroTopBar(
+            title = s.navLikes,
+            trailingActions = {
+                MeroIconButton(
+                    icon = Icons.Filled.Key,
+                    contentDescription = s.secretInviteCodeTitle,
+                    tint = colors.primary,
+                    containerColor = colors.surface2,
+                    onClick = { showInviteSheet = true },
+                    testTag = "likes_invite_code_topbar_button"
+                )
+            }
+        )
+
+        Surface(
+            shape = RoundedCornerShape(MeroRadius.card),
+            color = colors.surface,
+            border = BorderStroke(1.dp, colors.border),
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 560.dp)
+                .align(Alignment.CenterHorizontally)
+                .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.xs)
+                .defaultMinSize(minHeight = 48.dp)
+                .clip(RoundedCornerShape(MeroRadius.card))
+                .clickable { showInviteSheet = true }
+                .testTag("likes_invite_code_banner")
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.sm)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Key,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = s.secretInviteCodeTitle,
+                        style = MeroType.Body.copy(color = colors.text, fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (myInviteCode != null) {
+                            if (isNe) "तपाईंको कोड: ${myInviteCode.code} · कोड प्रयोग गर्न ट्याप गर्नुहोस्"
+                            else "Your code: ${myInviteCode.code} · Tap to share or enter code"
+                        } else {
+                            if (isNe) "विशेष व्यक्तिलाई निमन्त्रणा पठाउनुहोस् वा कोड राख्नुहोस्"
+                            else "Invite your favorite person or enter their secret code"
+                        },
+                        style = MeroType.Caption.copy(color = colors.textMuted),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
@@ -146,6 +239,20 @@ fun LikesConnectionsScreen(
         }
     }
 
+    if (showInviteSheet) {
+        SecretInviteSheet(
+            language = language,
+            myInviteCode = myInviteCode,
+            isBusy = isBusy,
+            onDismiss = { showInviteSheet = false },
+            onGenerateInviteCode = onGenerateInviteCode,
+            onRedeemInviteCode = { code ->
+                onRedeemInviteCode(code) { showInviteSheet = false }
+            },
+            onShowToast = onShowToast
+        )
+    }
+
     if (celebrationPair != null) {
         val (partnerName, convId) = celebrationPair
         AlertDialog(
@@ -205,6 +312,169 @@ fun LikesConnectionsScreen(
                 )
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SecretInviteSheet(
+    language: AppLanguage,
+    myInviteCode: InviteCodeRecord?,
+    isBusy: Boolean,
+    onDismiss: () -> Unit,
+    onGenerateInviteCode: () -> Unit,
+    onRedeemInviteCode: (String) -> Unit,
+    onShowToast: (String) -> Unit
+) {
+    BackHandler(onBack = onDismiss)
+    val colors = LocalMeroColors.current
+    val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    var partnerCodeInput by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = colors.surface
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(MeroSpacing.md),
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.sm)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Key,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = s.secretInviteCodeTitle,
+                        style = MeroType.Heading.copy(color = colors.text)
+                    )
+                }
+                MeroIconButton(
+                    icon = Icons.Filled.Close,
+                    contentDescription = s.close,
+                    onClick = onDismiss
+                )
+            }
+
+            Surface(
+                shape = RoundedCornerShape(MeroRadius.card),
+                color = colors.surface2,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                    modifier = Modifier.padding(MeroSpacing.md)
+                ) {
+                    Text(
+                        text = if (isNe) "तपाईंको व्यक्तिगत गोप्य कोड" else "Your Personal Secret Code",
+                        style = MeroType.Caption.copy(color = colors.textMuted, fontWeight = FontWeight.Medium)
+                    )
+                    if (myInviteCode != null) {
+                        Text(
+                            text = myInviteCode.code,
+                            style = MeroType.Title.copy(color = colors.primary, fontWeight = FontWeight.Bold),
+                            modifier = Modifier.testTag("my_secret_invite_code_text")
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            MeroSecondaryButton(
+                                text = if (isNe) "कपी" else "Copy",
+                                leadingIcon = Icons.Filled.ContentCopy,
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(myInviteCode.code))
+                                    onShowToast(
+                                        if (isNe) "कोड कपी गरियो: ${myInviteCode.code}"
+                                        else "Copied code: ${myInviteCode.code}"
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                testTag = "copy_invite_code_button"
+                            )
+                            MeroSecondaryButton(
+                                text = if (isNe) "साझा" else "Share",
+                                leadingIcon = Icons.Filled.Share,
+                                onClick = {
+                                    val shareMsg = if (isNe) {
+                                        "मेरो मायालुमा मसँग जोडिन यो गोप्य कोड प्रयोग गर्नुहोस्: ${myInviteCode.code}"
+                                    } else {
+                                        "Join me on Mero Mayalu using my secret invite code: ${myInviteCode.code}"
+                                    }
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, shareMsg)
+                                    }
+                                    runCatching {
+                                        context.startActivity(Intent.createChooser(intent, s.secretInviteCodeTitle))
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                testTag = "share_invite_code_button"
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = if (isNe) {
+                                "तपाईंको मनपर्ने व्यक्तिले सिधै चासो अनुरोध पठाउन सकून् भनेर गोप्य कोड बनाउनुहोस्।"
+                            } else {
+                                "Create a secret invite code so your favorite person can enter it and send you a direct interest request."
+                            },
+                            style = MeroType.Body.copy(color = colors.textMuted)
+                        )
+                    }
+                    MeroSecondaryButton(
+                        text = if (myInviteCode == null) {
+                            if (isNe) "गोप्य कोड बनाउनुहोस्" else "Generate Secret Code"
+                        } else {
+                            if (isNe) "नयाँ कोड बनाउनुहोस्" else "Rotate New Code"
+                        },
+                        leadingIcon = Icons.Filled.Refresh,
+                        enabled = !isBusy,
+                        onClick = onGenerateInviteCode,
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "generate_invite_code_button"
+                    )
+                }
+            }
+
+            MeroInput(
+                label = if (isNe) "मनपर्ने व्यक्तिको कोड राख्नुहोस्" else "Join via Favorite Person's Secret Code",
+                value = partnerCodeInput,
+                onValueChange = { next ->
+                    partnerCodeInput = next.uppercase().filter { it.isLetterOrDigit() }.take(16)
+                },
+                placeholder = if (isNe) "जस्तै: MM8K4P2X" else "e.g., MM8K4P2X",
+                testTag = "redeem_invite_code_input"
+            )
+            MeroButton(
+                text = if (isNe) "कोडबाट अनुरोध पठाउनुहोस्" else "Send Request with Code",
+                leadingIcon = Icons.Filled.Favorite,
+                enabled = partnerCodeInput.trim().length >= 6 && !isBusy,
+                isLoading = isBusy,
+                onClick = { onRedeemInviteCode(partnerCodeInput.trim()) },
+                testTag = "redeem_invite_code_button"
+            )
+            Spacer(Modifier.height(MeroSpacing.lg))
+        }
     }
 }
 

@@ -7,8 +7,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,14 +38,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,10 +76,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.designsystem.LocalMeroColors
 import com.example.core.designsystem.LocalMeroFontFamily
 import com.example.core.designsystem.MeroAvatarImage
+import com.example.core.designsystem.MeroButton
 import com.example.core.designsystem.MeroEmptyState
 import com.example.core.designsystem.MeroIconButton
 import com.example.core.designsystem.MeroPhotoBox
 import com.example.core.designsystem.MeroRadius
+import com.example.core.designsystem.MeroSecondaryButton
 import com.example.core.designsystem.MeroSpacing
 import com.example.core.designsystem.MeroType
 import com.example.core.domain.ChatMessage
@@ -102,6 +109,7 @@ fun ChatScreen(
     onSendText: (Conversation, String) -> Unit,
     onSendImage: (Conversation, String) -> Unit,
     onSendVoice: (Conversation, RecordedVoiceNote) -> Unit,
+    onDeleteMessage: (Conversation, ChatMessage) -> Unit,
     onToggleMute: (Conversation) -> Unit,
     onBlockPartner: (String) -> Unit,
     onReportPartner: (String) -> Unit,
@@ -123,6 +131,11 @@ fun ChatScreen(
     var liveAmp by remember { mutableIntStateOf(20) }
     var recordedDraft by remember { mutableStateOf<RecordedVoiceNote?>(null) }
     var playingMessageId by remember { mutableStateOf<String?>(null) }
+    var deleteConfirmTarget by remember { mutableStateOf<ChatMessage?>(null) }
+    var pendingImagePreview by remember { mutableStateOf<String?>(null) }
+    var isProcessingChatImage by remember { mutableStateOf(false) }
+    var chatImageError by remember { mutableStateOf<String?>(null) }
+    var lastFailedChatImageUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val recorder = remember { VoiceNoteRecorder(context) }
     val player = remember { VoiceNotePlayer(context) }
@@ -148,18 +161,34 @@ fun ChatScreen(
         }
     }
 
+    fun handleChatImageUri(uri: android.net.Uri) {
+        scope.launch {
+            isProcessingChatImage = true
+            chatImageError = null
+            lastFailedChatImageUri = null
+            when (val res = MediaHelper.processImageUriWithResult(context, uri, hd = true)) {
+                is com.example.core.util.MediaUploadResult.Success -> {
+                    pendingImagePreview = res.dataUri
+                }
+                is com.example.core.util.MediaUploadResult.Error -> {
+                    lastFailedChatImageUri = uri
+                    chatImageError = if (language == AppLanguage.NEPALI) res.messageNe else res.messageEn
+                }
+            }
+            isProcessingChatImage = false
+        }
+    }
+
+    val legacyImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) handleChatImageUri(uri)
+    }
+
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        val conv = conversation
-        if (uri != null && conv != null) {
-            scope.launch {
-                val compressed = MediaHelper.compressUriToDataUri(context, uri, maxDimension = 560, quality = 65)
-                if (compressed != null) {
-                    onSendImage(conv, compressed)
-                }
-            }
-        }
+        if (uri != null) handleChatImageUri(uri)
     }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -305,6 +334,7 @@ fun ChatScreen(
                             message = msg,
                             isMe = isMe,
                             isPlaying = playingMessageId == msg.id,
+                            deleteLabel = s.deleteMessageLabel,
                             onToggleVoicePlay = {
                                 if (playingMessageId == msg.id) {
                                     player.stop()
@@ -315,7 +345,10 @@ fun ChatScreen(
                                         playingMessageId = null
                                     }
                                 }
-                            }
+                            },
+                            onRequestDelete = if (isMe) {
+                                { deleteConfirmTarget = msg }
+                            } else null
                         )
                     }
                 }
@@ -381,6 +414,99 @@ fun ChatScreen(
             }
         }
 
+        if (isProcessingChatImage) {
+            Surface(
+                shape = RoundedCornerShape(MeroRadius.card),
+                color = colors.surface2,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.xs)
+            ) {
+                Text(
+                    text = if (language == AppLanguage.NEPALI) "तस्बिर तयार हुँदैछ..." else "Preparing image preview...",
+                    style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Medium),
+                    modifier = Modifier.padding(MeroSpacing.md)
+                )
+            }
+        }
+
+        if (chatImageError != null) {
+            Surface(
+                shape = RoundedCornerShape(MeroRadius.card),
+                color = colors.danger.copy(alpha = 0.12f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.xs)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                    modifier = Modifier.padding(MeroSpacing.md)
+                ) {
+                    Text(
+                        text = chatImageError.orEmpty(),
+                        style = MeroType.Caption.copy(color = colors.danger),
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (lastFailedChatImageUri != null) {
+                        MeroSecondaryButton(
+                            text = s.retry,
+                            onClick = {
+                                val retryUri = lastFailedChatImageUri
+                                if (retryUri != null) handleChatImageUri(retryUri)
+                            },
+                            testTag = "chat_retry_image_button"
+                        )
+                    }
+                }
+            }
+        }
+
+        val previewImg = pendingImagePreview
+        if (previewImg != null && conv != null) {
+            Surface(
+                shape = RoundedCornerShape(MeroRadius.card),
+                color = colors.surface2,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.xs)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                    modifier = Modifier.padding(MeroSpacing.md)
+                ) {
+                    MeroPhotoBox(
+                        photoData = previewImg,
+                        contentDescription = "Preview image",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(MeroRadius.small))
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        MeroSecondaryButton(
+                            text = s.cancel,
+                            onClick = { pendingImagePreview = null },
+                            modifier = Modifier.weight(1f),
+                            testTag = "chat_discard_image_preview"
+                        )
+                        MeroButton(
+                            text = s.send,
+                            onClick = {
+                                pendingImagePreview = null
+                                onSendImage(conv, previewImg)
+                            },
+                            modifier = Modifier.weight(1f),
+                            testTag = "chat_confirm_send_image"
+                        )
+                    }
+                }
+            }
+        }
+
         // Screen 4 Floating Pill Composer
         Surface(
             shape = RoundedCornerShape(MeroRadius.pill),
@@ -432,9 +558,13 @@ fun ChatScreen(
                     contentDescription = s.selectPhoto,
                     tint = colors.textMuted,
                     onClick = {
-                        imagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                        runCatching {
+                            imagePicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }.onFailure {
+                            legacyImagePicker.launch("image/*")
+                        }
                     },
                     testTag = "chat_pick_image_button"
                 )
@@ -481,14 +611,59 @@ fun ChatScreen(
             }
         }
     }
+
+    val targetToDelete = deleteConfirmTarget
+    if (targetToDelete != null && conv != null) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirmTarget = null },
+            containerColor = colors.surface,
+            title = {
+                Text(
+                    text = s.deleteMessageLabel,
+                    style = MeroType.Heading.copy(color = colors.danger)
+                )
+            },
+            text = {
+                Text(
+                    text = s.deleteMessageConfirm,
+                    style = MeroType.Body.copy(color = colors.text)
+                )
+            },
+            confirmButton = {
+                MeroButton(
+                    text = s.confirm,
+                    onClick = {
+                        deleteConfirmTarget = null
+                        if (playingMessageId == targetToDelete.id) {
+                            player.stop()
+                            playingMessageId = null
+                        }
+                        onDeleteMessage(conv, targetToDelete)
+                    },
+                    testTag = "chat_confirm_delete_button"
+                )
+            },
+            dismissButton = {
+                MeroSecondaryButton(
+                    text = s.cancel,
+                    onClick = { deleteConfirmTarget = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "chat_cancel_delete_button"
+                )
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
     isMe: Boolean,
     isPlaying: Boolean,
-    onToggleVoicePlay: () -> Unit
+    deleteLabel: String,
+    onToggleVoicePlay: () -> Unit,
+    onRequestDelete: (() -> Unit)?
 ) {
     val colors = LocalMeroColors.current
     val bubbleBg = if (isMe) colors.primary else colors.surface
@@ -506,7 +681,14 @@ private fun MessageBubble(
             shape = RoundedCornerShape(MeroRadius.card),
             color = bubbleBg,
             border = if (isMe) null else BorderStroke(1.dp, colors.border),
-            modifier = Modifier.widthIn(max = 280.dp)
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .clip(RoundedCornerShape(MeroRadius.card))
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = { onRequestDelete?.invoke() }
+                )
+                .testTag("chat_bubble_${message.id}")
         ) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
@@ -569,12 +751,33 @@ private fun MessageBubble(
                         )
                     }
                 }
-                if (timeText.isNotBlank()) {
-                    Text(
-                        text = timeText,
-                        style = MeroType.Caption.copy(color = bubbleFg.copy(alpha = 0.78f)),
-                        modifier = Modifier.align(Alignment.End)
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (timeText.isNotBlank()) {
+                        Text(
+                            text = timeText,
+                            style = MeroType.Caption.copy(color = bubbleFg.copy(alpha = 0.78f))
+                        )
+                    }
+                    if (onRequestDelete != null) {
+                        Spacer(Modifier.width(MeroSpacing.xs))
+                        IconButton(
+                            onClick = onRequestDelete,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .testTag("chat_delete_msg_${message.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = deleteLabel,
+                                tint = bubbleFg.copy(alpha = 0.86f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

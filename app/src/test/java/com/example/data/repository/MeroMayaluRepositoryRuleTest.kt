@@ -165,6 +165,125 @@ class MeroMayaluRepositoryRuleTest : FirestoreEmulatorTestBase() {
         }
     }
 
+    @Test
+    fun messageDeletion_polls_and_secretInviteCodes_workWithSecurityRules() = runBlocking {
+        val runId = UUID.randomUUID().toString().take(8)
+        val maleEmail = "kiran_$runId@test.com"
+        val femaleEmail = "maya_$runId@test.com"
+
+        val maleUid = signInTestUser(maleEmail)
+        val repo = MeroMayaluRepository(firestore, auth)
+        val malePublic = samplePublic(maleUid, "Kiran", "Male")
+        withTimeout(TIMEOUT_MS) {
+            repo.saveProfile(samplePrivate(maleUid, "Kiran", "Male"), malePublic, isInitialCreate = true)
+        }
+
+        val femaleUid = signInTestUser(femaleEmail)
+        val femalePublic = samplePublic(femaleUid, "Maya", "Female")
+        withTimeout(TIMEOUT_MS) {
+            repo.saveProfile(samplePrivate(femaleUid, "Maya", "Female"), femalePublic, isInitialCreate = true)
+        }
+
+        // 1. Secret invite code generation & redemption sends direct interest request
+        val code = withTimeout(TIMEOUT_MS) { repo.generateOrRotateInviteCode(femalePublic) }
+        assertTrue(code.startsWith("MM") && code.length >= 8)
+
+        signInTestUser(maleEmail)
+        val resolvedTarget = withTimeout(TIMEOUT_MS) { repo.redeemInviteCodeAndSendRequest(code, malePublic) }
+        assertEquals(femaleUid, resolvedTarget.uid)
+
+        signInTestUser(femaleEmail)
+        val incoming = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observeIncomingRequests().first { list -> list.any { it.fromUid == maleUid } }
+        }
+        val req = incoming.first { it.fromUid == maleUid }
+        withTimeout(TIMEOUT_MS) { repo.approveInterestRequest(req, femalePublic) }
+
+        val conv = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observeConversations().first { it.isNotEmpty() }
+        }.first()
+
+        // 2. Permanent deletion of voice message by sender
+        withTimeout(TIMEOUT_MS) {
+            repo.sendMessage(
+                conversation = conv,
+                type = "VOICE",
+                mediaData = "data:audio/mp4;base64,AAAA",
+                audioDurationSec = 4,
+                waveform = listOf(20, 50, 80, 40)
+            )
+        }
+        val sentMsgs = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observeMessages(conv.id).first { it.isNotEmpty() }
+        }
+        val voiceMsg = sentMsgs.first { it.type == "VOICE" }
+        withTimeout(TIMEOUT_MS) { repo.deleteMessage(conv.id, voiceMsg) }
+        val afterDelete = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observeMessages(conv.id).first { list -> list.none { it.id == voiceMsg.id } }
+        }
+        assertTrue(afterDelete.isEmpty())
+
+        // 3. Quick poll creation & voting
+        withTimeout(TIMEOUT_MS) {
+            repo.createCulturePost(
+                author = femalePublic,
+                thoughtText = "Favorite Nepali festival feast?",
+                imageData = "",
+                culturalTag = "Culture",
+                postType = "POLL",
+                pollOptions = listOf("Samay Baji", "Sel Roti", "Yomari"),
+                scheduledAt = null
+            )
+        }
+        val posts = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observeCulturePosts().first { list -> list.any { it.postType == "POLL" && it.authorUid == femaleUid } }
+        }
+        val poll = posts.first { it.postType == "POLL" && it.authorUid == femaleUid }
+        signInTestUser(maleEmail)
+        withTimeout(TIMEOUT_MS) { repo.voteOnPoll(poll.id, 2) }
+        val votes = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observePollVotes(poll.id).first { it.isNotEmpty() }
+        }
+        assertEquals(2, votes.first().optionIndex)
+    }
+
+    @Test
+    fun optionalProfilePictures_saveWithZeroPhotosAndUpdatePhotos_succeeds() = runBlocking {
+        val runId = UUID.randomUUID().toString().take(8)
+        val userEmail = "nophoto_$runId@test.com"
+        val uid = signInTestUser(userEmail)
+        val repo = MeroMayaluRepository(firestore, auth)
+
+        val publicNoPhotos = samplePublic(uid, "Nischal", "Male").copy(photoDataList = emptyList())
+        withTimeout(TIMEOUT_MS) {
+            repo.saveProfile(samplePrivate(uid, "Nischal", "Male"), publicNoPhotos, isInitialCreate = true)
+        }
+
+        val savedInitial = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observePublicProfile(uid).first { it != null }
+        }!!
+        assertTrue(savedInitial.photoDataList.isEmpty())
+
+        // Later add a profile photo
+        val samplePhoto = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/"
+        withTimeout(TIMEOUT_MS) {
+            repo.updateProfilePhotos(listOf(samplePhoto))
+        }
+        val afterAdd = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observePublicProfile(uid).first { it?.photoDataList?.isNotEmpty() == true }
+        }!!
+        assertEquals(1, afterAdd.photoDataList.size)
+
+        // Later remove the profile photo back to 0 photos
+        withTimeout(TIMEOUT_MS) {
+            repo.updateProfilePhotos(emptyList())
+        }
+        val afterRemove = withTimeout(FLOW_TIMEOUT_MS) {
+            repo.observePublicProfile(uid).first { it?.photoDataList?.isEmpty() == true }
+        }!!
+        assertTrue(afterRemove.photoDataList.isEmpty())
+    }
+
     private companion object {
         const val TIMEOUT_MS = 8000L
         const val FLOW_TIMEOUT_MS = 5000L

@@ -1,6 +1,8 @@
 package com.example.feature.moments
 
 import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,15 +26,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.Poll
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -66,17 +74,30 @@ import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
 import com.example.core.util.MediaHelper
 import com.example.core.util.NepaliCultureCatalog
+import com.google.firebase.Timestamp
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CreateMomentSheet(
     language: AppLanguage,
     initialThought: String = "",
+    initialPollMode: Boolean = false,
     isBusy: Boolean,
     onDismiss: () -> Unit,
-    onPublish: (thoughtText: String, imageData: String, culturalTag: String) -> Unit,
+    onPublish: (
+        thoughtText: String,
+        imageData: String,
+        culturalTag: String,
+        postType: String,
+        pollOptions: List<String>,
+        scheduledAt: Timestamp?
+    ) -> Unit,
     onShowError: (String) -> Unit
 ) {
     val colors = LocalMeroColors.current
@@ -85,38 +106,58 @@ fun CreateMomentSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var isPollMode by remember(initialPollMode) { mutableStateOf(initialPollMode) }
     var thoughtText by remember(initialThought) { mutableStateOf(initialThought) }
+    var pollOptions by remember { mutableStateOf(listOf("", "")) }
     var selectedTag by remember {
         val first = NepaliCultureCatalog.thoughtTags.first()
         mutableStateOf(if (isNe) first.second else first.first)
     }
     var customTag by remember { mutableStateOf("") }
     var imageData by remember { mutableStateOf("") }
+    var isProcessingImage by remember { mutableStateOf(false) }
+    var imageUploadError by remember { mutableStateOf<String?>(null) }
+    var lastFailedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var hdImageEnabled by remember { mutableStateOf(true) }
+    var isScheduled by remember { mutableStateOf(false) }
+    var scheduledAtMillis by remember { mutableStateOf<Long?>(null) }
     var icebreakerIdx by remember { mutableIntStateOf(0) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+
+    fun processImageUri(uri: Uri) {
+        scope.launch {
+            isProcessingImage = true
+            imageUploadError = null
+            lastFailedImageUri = null
+            when (val res = MediaHelper.processImageUriWithResult(context, uri, hd = hdImageEnabled)) {
+                is com.example.core.util.MediaUploadResult.Success -> {
+                    imageData = res.dataUri
+                }
+                is com.example.core.util.MediaUploadResult.Error -> {
+                    lastFailedImageUri = uri
+                    imageUploadError = if (isNe) res.messageNe else res.messageEn
+                }
+            }
+            isProcessingImage = false
+        }
+    }
+
+    val legacyPhotoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) processImageUri(uri)
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val compressed = MediaHelper.compressUriToDataUri(context, uri)
-                if (compressed != null) imageData = compressed
-                else onShowError(if (isNe) "फोटो लोड गर्न सकिएन।" else "Could not process image.")
-            }
-        }
+        if (uri != null) processImageUri(uri)
     }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val compressed = MediaHelper.compressUriToDataUri(context, uri)
-                if (compressed != null) imageData = compressed
-                else onShowError(if (isNe) "फोटो लोड गर्न सकिएन।" else "Could not read selected file.")
-            }
-        }
+        if (uri != null) processImageUri(uri)
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -124,19 +165,23 @@ fun CreateMomentSheet(
     ) { success ->
         val uri = cameraUri
         if (success && uri != null) {
-            scope.launch {
-                val compressed = MediaHelper.compressUriToDataUri(context, uri)
-                if (compressed != null) imageData = compressed
-            }
+            processImageUri(uri)
         }
     }
 
     fun launchCamera() {
-        val dir = File(context.cacheDir, "images").apply { mkdirs() }
-        val file = File(dir, "moment_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        cameraUri = uri
-        cameraLauncher.launch(uri)
+        runCatching {
+            val dir = File(context.cacheDir, "images").apply { mkdirs() }
+            val file = File(dir, "moment_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            cameraUri = uri
+            cameraLauncher.launch(uri)
+        }.onFailure {
+            onShowError(
+                if (isNe) "क्यामेरा खोल्न सकिएन। कृपया फेरि प्रयास गर्नुहोस्।"
+                else "Unable to open device camera right now."
+            )
+        }
     }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -144,6 +189,47 @@ fun CreateMomentSheet(
     ) { granted ->
         if (granted) launchCamera()
         else onShowError(if (isNe) "क्यामेरा अनुमति आवश्यक छ।" else "Camera permission is needed to take a photo.")
+    }
+
+    fun openDateTimePicker() {
+        val base = Calendar.getInstance().apply {
+            if (scheduledAtMillis != null && scheduledAtMillis!! > System.currentTimeMillis()) {
+                timeInMillis = scheduledAtMillis!!
+            } else {
+                add(Calendar.HOUR_OF_DAY, 1)
+            }
+        }
+        DatePickerDialog(
+            context,
+            { _, year, month, day ->
+                TimePickerDialog(
+                    context,
+                    { _, hour, minute ->
+                        val picked = Calendar.getInstance().apply {
+                            set(year, month, day, hour, minute, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                        if (picked.timeInMillis <= System.currentTimeMillis() + 60_000L) {
+                            onShowError(
+                                if (isNe) "कृपया भविष्यको मिति र समय छान्नुहोस्।"
+                                else "Please pick a future date and time."
+                            )
+                        } else {
+                            scheduledAtMillis = picked.timeInMillis
+                            isScheduled = true
+                        }
+                    },
+                    base.get(Calendar.HOUR_OF_DAY),
+                    base.get(Calendar.MINUTE),
+                    false
+                ).show()
+            },
+            base.get(Calendar.YEAR),
+            base.get(Calendar.MONTH),
+            base.get(Calendar.DAY_OF_MONTH)
+        ).apply {
+            datePicker.minDate = System.currentTimeMillis() - 1_000L
+        }.show()
     }
 
     ModalBottomSheet(
@@ -163,27 +249,108 @@ fun CreateMomentSheet(
                 style = MeroType.Heading.copy(color = colors.text)
             )
 
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                MeroChip(
+                    label = if (isNe) "विचार / तस्बिर" else "Thought / Photo",
+                    selected = !isPollMode,
+                    onClick = { isPollMode = false },
+                    modifier = Modifier.weight(1f),
+                    testTag = "moment_mode_thought"
+                )
+                MeroChip(
+                    label = if (isNe) "द्रुत मतदान" else "Quick Poll",
+                    selected = isPollMode,
+                    leadingIcon = Icons.Filled.Poll,
+                    onClick = { isPollMode = true },
+                    modifier = Modifier.weight(1f),
+                    testTag = "moment_mode_poll"
+                )
+            }
+
             MeroInput(
-                label = if (isNe) "तपाईंको विचार वा सन्देश" else "Your thought or cultural story",
+                label = if (isPollMode) {
+                    if (isNe) "तपाईंको प्रश्न (मतदान)" else "Your quick poll question"
+                } else {
+                    if (isNe) "तपाईंको विचार वा सन्देश" else "Your thought or cultural story"
+                },
                 value = thoughtText,
                 onValueChange = { if (it.length <= 600) thoughtText = it },
-                placeholder = s.thoughtPlaceholder,
+                placeholder = if (isPollMode) {
+                    if (isNe) "जस्तै: काठमाडौंको सबैभन्दा मनपर्ने चिया थलो कुन हो?" else "e.g., Best spot for a quiet chiya chat in Nepal?"
+                } else {
+                    s.thoughtPlaceholder
+                },
                 singleLine = false,
                 maxLines = 5,
                 testTag = "moment_thought_input"
             )
 
-            MeroSecondaryButton(
-                text = s.icebreakerButton,
-                leadingIcon = Icons.Filled.AutoAwesome,
-                onClick = {
-                    val item = NepaliCultureCatalog.icebreakers[icebreakerIdx % NepaliCultureCatalog.icebreakers.size]
-                    icebreakerIdx += 1
-                    thoughtText = if (isNe) item.second else item.first
-                },
-                modifier = Modifier.fillMaxWidth(),
-                testTag = "moment_icebreaker_button"
-            )
+            if (isPollMode) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (isNe) "मतदान विकल्पहरू (२–४)" else "Poll Options (2–4)",
+                        style = MeroType.Caption.copy(color = colors.text, fontWeight = FontWeight.Medium)
+                    )
+                    pollOptions.forEachIndexed { idx, optText ->
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            MeroInput(
+                                label = if (isNe) "विकल्प ${idx + 1}" else "Option ${idx + 1}",
+                                value = optText,
+                                onValueChange = { next ->
+                                    if (next.length <= 60) {
+                                        pollOptions = pollOptions.toMutableList().also { it[idx] = next }
+                                    }
+                                },
+                                placeholder = if (isNe) "विकल्प लेख्नुहोस्" else "Enter choice...",
+                                modifier = Modifier.weight(1f),
+                                testTag = "moment_poll_option_$idx"
+                            )
+                            if (pollOptions.size > 2) {
+                                MeroIconButton(
+                                    icon = Icons.Filled.Close,
+                                    contentDescription = s.cancel,
+                                    tint = colors.danger,
+                                    onClick = {
+                                        pollOptions = pollOptions.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    testTag = "moment_poll_remove_$idx"
+                                )
+                            }
+                        }
+                    }
+                    if (pollOptions.size < 4) {
+                        MeroSecondaryButton(
+                            text = if (isNe) "अर्को विकल्प थप्नुहोस्" else "Add Poll Option",
+                            leadingIcon = Icons.Filled.Add,
+                            onClick = { pollOptions = pollOptions + "" },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "moment_poll_add_option"
+                        )
+                    }
+                }
+            } else {
+                MeroSecondaryButton(
+                    text = s.icebreakerButton,
+                    leadingIcon = Icons.Filled.AutoAwesome,
+                    onClick = {
+                        val item = NepaliCultureCatalog.icebreakers[icebreakerIdx % NepaliCultureCatalog.icebreakers.size]
+                        icebreakerIdx += 1
+                        thoughtText = if (isNe) item.second else item.first
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "moment_icebreaker_button"
+                )
+            }
 
             Text(
                 text = if (isNe) "सांस्कृतिक ट्याग" else "Cultural Tag",
@@ -212,6 +379,41 @@ fun CreateMomentSheet(
                 placeholder = if (isNe) "जस्तै: पोखरा साँझ" else "e.g., Kathmandu Chiya",
                 testTag = "moment_custom_tag_input"
             )
+
+            if (isProcessingImage) {
+                com.example.core.designsystem.MeroLoadingState(
+                    message = if (isNe) "तस्बिर लोड र अनुकूलन हुँदैछ..." else "Loading & optimizing image preview..."
+                )
+            }
+
+            if (imageUploadError != null) {
+                Surface(
+                    shape = RoundedCornerShape(MeroRadius.small),
+                    color = colors.danger.copy(alpha = 0.12f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                        modifier = Modifier.padding(MeroSpacing.md)
+                    ) {
+                        Text(
+                            text = imageUploadError.orEmpty(),
+                            style = MeroType.Caption.copy(color = colors.danger, fontWeight = FontWeight.Medium)
+                        )
+                        if (lastFailedImageUri != null) {
+                            MeroSecondaryButton(
+                                text = s.retry,
+                                onClick = {
+                                    val retryUri = lastFailedImageUri
+                                    if (retryUri != null) processImageUri(retryUri)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                testTag = "moment_retry_image_button"
+                            )
+                        }
+                    }
+                }
+            }
 
             if (imageData.isNotBlank()) {
                 Box(
@@ -242,6 +444,32 @@ fun CreateMomentSheet(
                 }
             }
 
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Filled.HighQuality,
+                        contentDescription = null,
+                        tint = colors.primary
+                    )
+                    Text(
+                        text = if (isNe) "HD उच्च गुणस्तर तस्बिर" else "HD Photo Quality",
+                        style = MeroType.Body.copy(color = colors.text)
+                    )
+                }
+                Switch(
+                    checked = hdImageEnabled,
+                    onCheckedChange = { hdImageEnabled = it }
+                )
+            }
+
             Column(
                 verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
                 modifier = Modifier.fillMaxWidth()
@@ -249,10 +477,15 @@ fun CreateMomentSheet(
                 MeroSecondaryButton(
                     text = s.selectPhoto,
                     leadingIcon = Icons.Filled.AddAPhoto,
+                    enabled = !isProcessingImage,
                     onClick = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                        runCatching {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }.onFailure {
+                            legacyPhotoLauncher.launch("image/*")
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     testTag = "moment_pick_photo"
@@ -260,13 +493,21 @@ fun CreateMomentSheet(
                 MeroSecondaryButton(
                     text = s.browseFoldersPhoto,
                     leadingIcon = Icons.Filled.FolderOpen,
-                    onClick = { folderPickerLauncher.launch(arrayOf("image/*")) },
+                    enabled = !isProcessingImage,
+                    onClick = {
+                        runCatching {
+                            folderPickerLauncher.launch(MediaHelper.SUPPORTED_IMAGE_MIMES)
+                        }.onFailure {
+                            legacyPhotoLauncher.launch("image/*")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     testTag = "moment_browse_folders"
                 )
                 MeroSecondaryButton(
                     text = s.takePhoto,
                     leadingIcon = Icons.Filled.CameraAlt,
+                    enabled = !isProcessingImage,
                     onClick = {
                         val granted = ContextCompat.checkSelfPermission(
                             context,
@@ -280,14 +521,128 @@ fun CreateMomentSheet(
                 )
             }
 
+            // Schedule Posting Section
+            Text(
+                text = if (isNe) "प्रकाशन समय" else "Publishing Schedule",
+                style = MeroType.Caption.copy(color = colors.text, fontWeight = FontWeight.Medium)
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                MeroChip(
+                    label = if (isNe) "अहिले पोस्ट" else "Post Now",
+                    selected = !isScheduled,
+                    onClick = {
+                        isScheduled = false
+                        scheduledAtMillis = null
+                    },
+                    modifier = Modifier.weight(1f),
+                    testTag = "moment_post_now_chip"
+                )
+                MeroChip(
+                    label = if (isNe) "मिति तालिका" else "Schedule Date",
+                    selected = isScheduled,
+                    leadingIcon = Icons.Filled.Schedule,
+                    onClick = {
+                        isScheduled = true
+                        if (scheduledAtMillis == null || scheduledAtMillis!! <= System.currentTimeMillis()) {
+                            scheduledAtMillis = System.currentTimeMillis() + 3_600_000L
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    testTag = "moment_schedule_chip"
+                )
+            }
+
+            if (isScheduled) {
+                Surface(
+                    shape = RoundedCornerShape(MeroRadius.small),
+                    color = colors.surface2,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                        modifier = Modifier.padding(MeroSpacing.md)
+                    ) {
+                        val formatted = remember(scheduledAtMillis) {
+                            scheduledAtMillis?.let {
+                                SimpleDateFormat("EEE, MMM d, yyyy · h:mm a", Locale.getDefault()).format(Date(it))
+                            } ?: ""
+                        }
+                        if (formatted.isNotBlank()) {
+                            Text(
+                                text = if (isNe) "तालिका गरिएको: $formatted" else "Scheduled for: $formatted",
+                                style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Bold)
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            MeroChip(
+                                label = if (isNe) "+१ घण्टा" else "+1 Hour",
+                                selected = false,
+                                onClick = { scheduledAtMillis = System.currentTimeMillis() + 3_600_000L },
+                                modifier = Modifier.weight(1f)
+                            )
+                            MeroChip(
+                                label = if (isNe) "भोलि बिहान ९" else "Tomorrow 9 AM",
+                                selected = false,
+                                onClick = {
+                                    val cal = Calendar.getInstance().apply {
+                                        add(Calendar.DAY_OF_YEAR, 1)
+                                        set(Calendar.HOUR_OF_DAY, 9)
+                                        set(Calendar.MINUTE, 0)
+                                        set(Calendar.SECOND, 0)
+                                    }
+                                    scheduledAtMillis = cal.timeInMillis
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        MeroSecondaryButton(
+                            text = if (isNe) "आफ्नै मिति र समय छान्नुहोस्" else "Pick Custom Date & Time",
+                            leadingIcon = Icons.Filled.CalendarMonth,
+                            onClick = { openDateTimePicker() },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "moment_pick_schedule_datetime"
+                        )
+                    }
+                }
+            }
+
             val resolvedTag = customTag.trim().ifBlank { selectedTag }
-            val canPublish = thoughtText.trim().isNotBlank() || imageData.isNotBlank()
+            val cleanPollOptions = pollOptions.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+            val scheduleValid = !isScheduled || ((scheduledAtMillis ?: 0L) > System.currentTimeMillis())
+            val canPublish = if (isPollMode) {
+                thoughtText.trim().isNotBlank() && cleanPollOptions.size >= 2 && scheduleValid
+            } else {
+                (thoughtText.trim().isNotBlank() || imageData.isNotBlank()) && scheduleValid
+            }
+            val publishLabel = when {
+                isScheduled && isPollMode -> if (isNe) "मतदान तालिका गर्नुहोस्" else "Schedule Quick Poll"
+                isScheduled -> if (isNe) "पोस्ट तालिका गर्नुहोस्" else "Schedule Post"
+                isPollMode -> if (isNe) "द्रुत मतदान प्रकाशित गर्नुहोस्" else "Publish Quick Poll"
+                else -> if (isNe) "पोस्ट प्रकाशित गर्नुहोस्" else "Publish Cultural Moment"
+            }
+
             MeroButton(
-                text = if (isNe) "पोस्ट प्रकाशित गर्नुहोस्" else "Publish Cultural Moment",
+                text = publishLabel,
                 enabled = canPublish && !isBusy,
                 isLoading = isBusy,
                 onClick = {
-                    onPublish(thoughtText.trim(), imageData, resolvedTag)
+                    val ts = if (isScheduled && scheduledAtMillis != null) {
+                        Timestamp(Date(scheduledAtMillis!!))
+                    } else null
+                    onPublish(
+                        thoughtText.trim(),
+                        imageData,
+                        resolvedTag,
+                        if (isPollMode) "POLL" else "THOUGHT",
+                        if (isPollMode) cleanPollOptions else emptyList(),
+                        ts
+                    )
                 },
                 testTag = "moment_publish_button"
             )

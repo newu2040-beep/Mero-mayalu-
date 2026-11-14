@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.Verified
@@ -117,6 +118,12 @@ fun DiscoveryScreen(
             title = s.appName,
             showLogo = true,
             trailingActions = {
+                MeroIconButton(
+                    icon = Icons.Filled.Refresh,
+                    contentDescription = if (language == AppLanguage.NEPALI) "रिफ्रेस गर्नुहोस्" else "Refresh feed",
+                    onClick = onRetry,
+                    testTag = "discovery_refresh_button"
+                )
                 MeroIconButton(
                     icon = Icons.Filled.Notifications,
                     contentDescription = s.navLikes,

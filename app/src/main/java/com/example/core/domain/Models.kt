@@ -68,8 +68,32 @@ data class CulturePost(
     val thoughtText: String = "",
     val imageData: String = "",
     val culturalTag: String = "",
+    val postType: String = "THOUGHT",
+    val pollOptions: List<String> = emptyList(),
+    val scheduledAt: Timestamp? = null,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class PollVote(
+    @DocumentId val id: String = "",
+    val userUid: String = "",
+    val optionIndex: Int = 0,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class InviteCodeRecord(
+    @DocumentId val id: String = "",
+    val code: String = "",
+    val creatorUid: String = "",
+    val creatorName: String = "",
+    val creatorPhoto: String = "",
+    val creatorLocation: String = "",
+    val creatorGender: String = "Female",
+    val active: Boolean = true,
+    @ServerTimestamp val createdAt: Timestamp? = null
 )
 
 @IgnoreExtraProperties

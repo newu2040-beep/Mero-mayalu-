@@ -8,6 +8,8 @@ import com.example.core.domain.Connection
 import com.example.core.domain.Conversation
 import com.example.core.domain.CulturePost
 import com.example.core.domain.InterestRequest
+import com.example.core.domain.InviteCodeRecord
+import com.example.core.domain.PollVote
 import com.example.core.domain.PostReaction
 import com.example.core.domain.PrivateUser
 import com.example.core.domain.PublicProfile
@@ -17,6 +19,7 @@ import com.example.core.firebase.OperationType
 import com.example.core.firebase.handleFirestoreError
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
+import java.security.SecureRandom
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.DocumentSnapshot
@@ -97,7 +100,7 @@ class MeroMayaluRepository(
         val uid = requireUserId()
         require(privateUser.age >= 18 && privateUser.ageVerified) { "Age 18+ verification required." }
         require(privateUser.gender == "Male" || privateUser.gender == "Female") { "Gender must be Male or Female." }
-        require(publicProfile.photoDataList.isNotEmpty()) { "At least one profile photo is required." }
+        require(publicProfile.photoDataList.size <= 4) { "Up to 4 profile photos are supported." }
 
         val userRef = db.collection("users").document(uid)
         val publicRef = db.collection("publicProfiles").document(uid)
@@ -136,7 +139,7 @@ class MeroMayaluRepository(
                     "gender" to publicProfile.gender,
                     "bio" to publicProfile.bio.trim(),
                     "lookingFor" to publicProfile.lookingFor.trim(),
-                    "photoDataList" to publicProfile.photoDataList.take(4),
+                    "photoDataList" to publicProfile.photoDataList.filter { it.isNotBlank() }.take(4),
                     "bannerData" to publicProfile.bannerData.ifBlank { "preset:himalayan_dusk" },
                     "interests" to publicProfile.interests.distinct().take(16),
                     "hobbies" to publicProfile.hobbies.take(12),
@@ -175,7 +178,7 @@ class MeroMayaluRepository(
                     "displayName" to publicProfile.displayName.trim(),
                     "bio" to publicProfile.bio.trim(),
                     "lookingFor" to publicProfile.lookingFor.trim(),
-                    "photoDataList" to publicProfile.photoDataList.take(4),
+                    "photoDataList" to publicProfile.photoDataList.filter { it.isNotBlank() }.take(4),
                     "bannerData" to publicProfile.bannerData.ifBlank { "preset:himalayan_dusk" },
                     "interests" to publicProfile.interests.distinct().take(16),
                     "hobbies" to publicProfile.hobbies.take(12),
@@ -233,6 +236,24 @@ class MeroMayaluRepository(
             publicRef.update(
                 mapOf(
                     "bannerData" to bannerData,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, publicRef.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun updateProfilePhotos(photoDataList: List<String>) {
+        val uid = requireUserId()
+        val publicRef = db.collection("publicProfiles").document(uid)
+        try {
+            publicRef.update(
+                mapOf(
+                    "photoDataList" to photoDataList.filter { it.isNotBlank() }.take(4),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
@@ -679,6 +700,48 @@ class MeroMayaluRepository(
         }
     }
 
+    suspend fun deleteMessage(conversationId: String, message: ChatMessage) {
+        val uid = requireUserId()
+        require(message.senderUid == uid) { "You can only delete your own messages." }
+        val convRef = db.collection("conversations").document(conversationId)
+        val msgRef = convRef.collection("messages").document(message.id)
+        try {
+            msgRef.delete().await()
+            val remaining = runCatching {
+                convRef.collection("messages")
+                    .whereArrayContains("memberUids", uid)
+                    .get()
+                    .await()
+                    .toObjects(ChatMessage::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+            }.getOrNull()
+            if (remaining != null) {
+                val newest = remaining.firstOrNull()
+                val newPreview = when (newest?.type) {
+                    "IMAGE" -> "📷 Photo"
+                    "VOICE" -> "🎤 Voice note (${newest.audioDurationSec}s)"
+                    "TEXT" -> newest.text.trim().take(200)
+                    else -> ""
+                }
+                val newAt = newest?.createdAt ?: FieldValue.serverTimestamp()
+                runCatching {
+                    convRef.update(
+                        mapOf(
+                            "lastMessageText" to newPreview,
+                            "lastMessageAt" to newAt,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, msgRef.path, auth)
+            throw e
+        }
+    }
+
     suspend fun toggleConversationMute(conversationId: String, currentlyMuted: Boolean) {
         val convRef = db.collection("conversations").document(conversationId)
         try {
@@ -833,14 +896,24 @@ class MeroMayaluRepository(
         author: PublicProfile,
         thoughtText: String,
         imageData: String,
-        culturalTag: String
+        culturalTag: String,
+        postType: String = "THOUGHT",
+        pollOptions: List<String> = emptyList(),
+        scheduledAt: Timestamp? = null
     ) {
         val uid = requireUserId()
         val postId = UUID.randomUUID().toString()
         val ref = db.collection("culturePosts").document(postId)
         val cleanText = thoughtText.trim().take(600)
-        require(cleanText.isNotBlank() || imageData.isNotBlank()) { "Add a thought or photo to post." }
-        val payload = mapOf(
+        val cleanOptions = pollOptions.map { it.trim().take(60) }.filter { it.isNotBlank() }.distinct().take(4)
+        val normalizedType = if (postType == "POLL") "POLL" else "THOUGHT"
+        if (normalizedType == "POLL") {
+            require(cleanText.isNotBlank()) { "Ask a question for your quick poll." }
+            require(cleanOptions.size >= 2) { "Add at least 2 poll options." }
+        } else {
+            require(cleanText.isNotBlank() || imageData.isNotBlank()) { "Add a thought or photo to post." }
+        }
+        val payload = hashMapOf<String, Any>(
             "authorUid" to uid,
             "authorName" to author.displayName.take(60).ifBlank { "Member" },
             "authorPhoto" to (author.photoDataList.firstOrNull() ?: ""),
@@ -848,9 +921,14 @@ class MeroMayaluRepository(
             "thoughtText" to cleanText,
             "imageData" to imageData,
             "culturalTag" to culturalTag.trim().take(60),
+            "postType" to normalizedType,
+            "pollOptions" to cleanOptions,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )
+        if (scheduledAt != null) {
+            payload["scheduledAt"] = scheduledAt
+        }
         try {
             ref.set(payload).await()
         } catch (e: CancellationException) {
@@ -987,6 +1065,129 @@ class MeroMayaluRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.DELETE, ref.path, auth)
+            throw e
+        }
+    }
+
+    // --- POLL VOTES ---
+    fun observePollVotes(postId: String): Flow<List<PollVote>> = flow {
+        val uid = requireUserId()
+        val path = "culturePosts/$postId/pollVotes"
+        emitAll(
+            db.collection("culturePosts").document(postId).collection("pollVotes")
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(PollVote::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun voteOnPoll(postId: String, optionIndex: Int) {
+        val uid = requireUserId()
+        require(optionIndex in 0..3) { "Invalid poll option index." }
+        val ref = db.collection("culturePosts").document(postId).collection("pollVotes").document(uid)
+        try {
+            ref.set(
+                mapOf(
+                    "userUid" to uid,
+                    "optionIndex" to optionIndex,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, ref.path, auth)
+            throw e
+        }
+    }
+
+    // --- SECRET INVITE CODES ---
+    fun observeMyInviteCode(): Flow<InviteCodeRecord?> = flow {
+        val uid = requireUserId()
+        val path = "inviteCodes"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("creatorUid", uid)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(InviteCodeRecord::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .filter { it.active }
+                        .maxByOrNull { it.createdAt?.seconds ?: 0L }
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun generateOrRotateInviteCode(profile: PublicProfile): String {
+        val uid = requireUserId()
+        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val random = SecureRandom()
+        val newCode = "MM" + (1..6).map { chars[random.nextInt(chars.length)] }.joinToString("")
+        val coll = db.collection("inviteCodes")
+        try {
+            val existing = coll.whereEqualTo("creatorUid", uid).get().await()
+            val newRef = coll.document(newCode)
+            val payload = mapOf(
+                "code" to newCode,
+                "creatorUid" to uid,
+                "creatorName" to profile.displayName.take(60).ifBlank { "Member" },
+                "creatorPhoto" to (profile.photoDataList.firstOrNull() ?: ""),
+                "creatorLocation" to profile.publicLocationLabel.take(80),
+                "creatorGender" to profile.gender,
+                "active" to true,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.runBatch { batch ->
+                existing.documents.forEach { doc -> batch.delete(doc.reference) }
+                batch.set(newRef, payload)
+            }.await()
+            return newCode
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "inviteCodes/$newCode", auth)
+            throw e
+        }
+    }
+
+    suspend fun redeemInviteCodeAndSendRequest(
+        rawCode: String,
+        sender: PublicProfile
+    ): PublicProfile {
+        val uid = requireUserId()
+        val cleanCode = rawCode.trim().uppercase().replace("[^A-Z0-9]".toRegex(), "")
+        require(cleanCode.length in 6..16) { "Enter a valid secret invite code (e.g. MM8K4P2X)." }
+        val docRef = db.collection("inviteCodes").document(cleanCode)
+        try {
+            val snap = docRef.get().await()
+            if (!snap.exists()) {
+                throw IllegalArgumentException("Secret invite code not found. Double-check with your favorite person.")
+            }
+            val record = snap.toObject(InviteCodeRecord::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                ?: throw IllegalArgumentException("Invite code could not be read.")
+            require(record.active) { "This invite code is no longer active." }
+            require(record.creatorUid != uid) { "You cannot redeem your own secret invite code." }
+            require(record.creatorGender != sender.gender) {
+                "Eligibility rule allows interest requests with members of the opposite gender."
+            }
+            val targetProfile = getPublicProfile(record.creatorUid)
+                ?: throw IllegalStateException("This profile is paused or unavailable right now.")
+            sendInterestRequest(sender, targetProfile)
+            return targetProfile
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (e is FirebaseFirestoreException) {
+                handleFirestoreError(e, OperationType.GET, docRef.path, auth)
+            }
             throw e
         }
     }

@@ -87,6 +87,9 @@ import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
 import com.example.core.notifications.MeroNotificationHelper
 import com.example.core.security.BiometricLockHelper
+import com.example.core.util.DataExportHelper
+import com.example.core.util.ExportFormat
+import com.example.core.util.ExportUserData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -98,7 +101,7 @@ fun SettingsScreen(
     localPrefs: LocalAppPreferences,
     privateUser: PrivateUser?,
     blockedUsers: List<BlockRecord>,
-    buildExportJson: () -> String,
+    buildExportData: () -> ExportUserData,
     onBack: () -> Unit,
     onSelectLanguage: (AppLanguage) -> Unit,
     onSelectThemeCatalog: (MeroThemeCatalog) -> Unit,
@@ -120,30 +123,48 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val isNe = language == AppLanguage.NEPALI
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
     var permissionRefreshKey by remember { mutableIntStateOf(0) }
 
-    val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val json = buildExportJson()
-                val ok = withContext(Dispatchers.IO) {
-                    runCatching {
-                        context.contentResolver.openOutputStream(uri)?.use { out ->
-                            out.write(json.toByteArray())
-                        }
-                        true
-                    }.getOrDefault(false)
-                }
-                if (ok) {
-                    onExportSuccessToast(
-                        if (isNe) "तपाईंको डेटा सफलतापूर्वक निर्यात गरियो।" else "Your data was exported successfully."
-                    )
-                }
+    fun saveExportToUri(uri: android.net.Uri?, format: ExportFormat) {
+        if (uri == null) return
+        scope.launch {
+            val data = buildExportData()
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        DataExportHelper.writeToStream(format, data, out)
+                    } ?: error("OutputStream unavailable")
+                    true
+                }.getOrDefault(false)
             }
+            onExportSuccessToast(
+                if (ok) {
+                    if (isNe) "तपाईंको डेटा (${format.extension.uppercase()}) निर्यात गरियो।"
+                    else "Your ${format.extension.uppercase()} export is saved!"
+                } else {
+                    if (isNe) "फाइल सुरक्षित गर्न सकिएन।"
+                    else "Could not write export file."
+                }
+            )
         }
     }
+
+    val pdfExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(ExportFormat.PDF.mimeType)
+    ) { uri -> saveExportToUri(uri, ExportFormat.PDF) }
+
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(ExportFormat.CSV.mimeType)
+    ) { uri -> saveExportToUri(uri, ExportFormat.CSV) }
+
+    val txtExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(ExportFormat.TXT.mimeType)
+    ) { uri -> saveExportToUri(uri, ExportFormat.TXT) }
+
+    val jsonExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(ExportFormat.JSON.mimeType)
+    ) { uri -> saveExportToUri(uri, ExportFormat.JSON) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -494,7 +515,7 @@ fun SettingsScreen(
                 MeroListItem(
                     title = s.exportDataLabel,
                     leadingIcon = Icons.Filled.Download,
-                    onClick = { exportLauncher.launch("mero-mayalu-export.json") },
+                    onClick = { showExportDialog = true },
                     testTag = "settings_export_data"
                 )
                 MeroListItem(
@@ -512,6 +533,51 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            containerColor = colors.surface,
+            title = {
+                Text(
+                    text = s.exportDataLabel,
+                    style = MeroType.Heading.copy(color = colors.text)
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm)) {
+                    Text(
+                        text = if (isNe) "आफ्नो डेटा निर्यात गर्न फाइल ढाँचा छान्नुहोस्:" else "Choose a file format for your personal data export:",
+                        style = MeroType.Body.copy(color = colors.textMuted)
+                    )
+                    ExportFormat.entries.forEach { fmt ->
+                        MeroSecondaryButton(
+                            text = if (isNe) fmt.labelNe else fmt.labelEn,
+                            leadingIcon = Icons.Filled.Download,
+                            onClick = {
+                                showExportDialog = false
+                                val fileName = "mero-mayalu-export.${fmt.extension}"
+                                when (fmt) {
+                                    ExportFormat.PDF -> pdfExportLauncher.launch(fileName)
+                                    ExportFormat.CSV -> csvExportLauncher.launch(fileName)
+                                    ExportFormat.TXT -> txtExportLauncher.launch(fileName)
+                                    ExportFormat.JSON -> jsonExportLauncher.launch(fileName)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "export_format_${fmt.extension}"
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                MeroButton(
+                    text = s.cancel,
+                    onClick = { showExportDialog = false }
+                )
+            }
+        )
     }
 
     if (showDeleteConfirm) {

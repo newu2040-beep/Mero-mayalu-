@@ -5,8 +5,6 @@ on:
     branches:
       - main
       - master
-    paths:
-      - 'apk-distribution/app-debug.apk'
   workflow_dispatch:
 
 permissions:
@@ -19,29 +17,91 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate prebuilt APK and checksum
+      - name: Restore or verify prebuilt APK (immune to UTF-8 binary corruption)
+        id: prepare_apk
+        run: |
+          set -euo pipefail
+          APK_PATH="apk-distribution/app-debug.apk"
+          B64_PATH="apk-distribution/app-debug.apk.base64"
+          SHA_PATH="apk-distribution/app-debug.apk.sha256"
+
+          # 1. If ASCII Base64 representation exists, always decode it first to guarantee
+          # bit-for-bit immunity against UTF-8 text conversion during web GitHub pushes.
+          if [ -f "$B64_PATH" ] && [ -s "$B64_PATH" ]; then
+            echo "Restoring binary APK from ASCII Base64 ($B64_PATH)..."
+            tr -d '\r\n ' < "$B64_PATH" | base64 -d > "${APK_PATH}.decoded"
+            mv "${APK_PATH}.decoded" "$APK_PATH"
+          fi
+
+          # 2. Verify checksum and ZIP structure
+          NEED_BUILD=0
+          if [ ! -f "$APK_PATH" ] || [ ! -s "$APK_PATH" ]; then
+            NEED_BUILD=1
+          elif [ -f "$SHA_PATH" ] && [ -s "$SHA_PATH" ]; then
+            if ! (cd apk-distribution && sha256sum -c app-debug.apk.sha256); then
+              echo "Checksum mismatch detected on $APK_PATH; will rebuild clean APK."
+              NEED_BUILD=1
+            fi
+          fi
+
+          if [ "$NEED_BUILD" -eq 0 ]; then
+            if ! unzip -tq "$APK_PATH"; then
+              echo "ZIP integrity check failed on $APK_PATH; will rebuild clean APK."
+              NEED_BUILD=1
+            fi
+          fi
+
+          echo "need_build=${NEED_BUILD}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17 (fallback build if needed)
+        if: steps.prepare_apk.outputs.need_build == '1'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Gradle (fallback build if needed)
+        if: steps.prepare_apk.outputs.need_build == '1'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Rebuild and sign clean APK if binary was missing or modified
+        if: steps.prepare_apk.outputs.need_build == '1'
+        run: |
+          set -euo pipefail
+          if [ -f "debug.keystore.base64" ]; then
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore
+          fi
+          gradle assembleDebug
+          mkdir -p apk-distribution
+          BUILD_TOOLS_DIR=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
+          "$BUILD_TOOLS_DIR/zipalign" -p -f 4 app/build/outputs/apk/debug/app-debug.apk apk-distribution/app-debug.apk
+          "$BUILD_TOOLS_DIR/apksigner" sign \
+            --min-sdk-version 21 \
+            --ks debug.keystore \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            apk-distribution/app-debug.apk
+          (cd apk-distribution && sha256sum app-debug.apk > app-debug.apk.sha256)
+
+      - name: Validate final APK integrity and signatures
         id: validate
         run: |
           set -euo pipefail
           APK_PATH="apk-distribution/app-debug.apk"
-          SHA_PATH="apk-distribution/app-debug.apk.sha256"
-
-          if [ ! -f "$APK_PATH" ] || [ ! -s "$APK_PATH" ]; then
-            echo "::error::Missing or empty $APK_PATH"
-            exit 1
-          fi
-
-          if [ ! -f "$SHA_PATH" ] || [ ! -s "$SHA_PATH" ]; then
-            echo "::error::Missing or empty $SHA_PATH"
-            exit 1
-          fi
-
-          (
-            cd apk-distribution
-            sha256sum -c app-debug.apk.sha256
-          )
-
+          (cd apk-distribution && sha256sum -c app-debug.apk.sha256)
           unzip -tq "$APK_PATH"
+
+          BUILD_TOOLS_DIR=$(ls -d "$ANDROID_HOME/build-tools/"* 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$BUILD_TOOLS_DIR" ] && [ -x "$BUILD_TOOLS_DIR/apksigner" ]; then
+            "$BUILD_TOOLS_DIR/apksigner" verify --verbose "$APK_PATH"
+          fi
 
           APK_BYTES=$(stat -c '%s' "$APK_PATH")
           APK_HUMAN=$(ls -lh "$APK_PATH" | awk '{print $5}')
@@ -55,7 +115,7 @@ jobs:
             echo "release_tag=${RELEASE_TAG}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Publish GitHub Release with prebuilt APK
+      - name: Publish GitHub Release with verified APK
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.validate.outputs.release_tag }}
@@ -65,9 +125,10 @@ jobs:
           set -euo pipefail
           gh release create "$RELEASE_TAG" \
             "apk-distribution/app-debug.apk#app-debug.apk" \
+            "apk-distribution/app-debug.apk.sha256#app-debug.apk.sha256" \
             --latest \
-            --title "Debug APK (${RELEASE_TAG})" \
-            --notes "Prebuilt debug APK compiled in Google AI Studio. SHA-256: \`${APK_SHA256}\` (${APK_BYTES} bytes)."
+            --title "Mero Mayalu v5.6 Debug APK (${RELEASE_TAG})" \
+            --notes "Verified & signed (v1+v2+v3) Android debug APK. SHA-256: \`${APK_SHA256}\` (${APK_BYTES} bytes)."
 
       - name: Write release summary
         env:

@@ -93,9 +93,9 @@ service cloud.firestore {
              (data.gender == 'Male' || data.gender == 'Female') &&
              data.bio is string && data.bio.size() <= 300 &&
              data.lookingFor is string && data.lookingFor.size() <= 150 &&
-             data.photoDataList is list && data.photoDataList.size() >= 1 && data.photoDataList.size() <= 4 &&
-             data.photoDataList[0] is string && data.photoDataList[0].size() >= 1 && data.photoDataList[0].size() <= 250000 &&
-             (!('bannerData' in data) || (data.bannerData is string && data.bannerData.size() <= 250000)) &&
+             data.photoDataList is list && data.photoDataList.size() <= 4 &&
+             (data.photoDataList.size() == 0 || (data.photoDataList[0] is string && data.photoDataList[0].size() >= 1 && data.photoDataList[0].size() <= 500000)) &&
+             (!('bannerData' in data) || (data.bannerData is string && data.bannerData.size() <= 700000)) &&
              data.interests is list && data.interests.size() <= 16 && (data.interests.size() == 0 || data.interests[0] is string) &&
              data.hobbies is list && data.hobbies.size() <= 12 && (data.hobbies.size() == 0 || data.hobbies[0] is string) &&
              data.prompts is list && data.prompts.size() <= 6 && (data.prompts.size() == 0 || data.prompts[0] is string) &&
@@ -117,16 +117,21 @@ service cloud.firestore {
              ]) &&
              data.keys().hasOnly([
                'authorUid', 'authorName', 'authorPhoto', 'authorLocation',
-               'thoughtText', 'imageData', 'culturalTag', 'createdAt', 'updatedAt'
+               'thoughtText', 'imageData', 'culturalTag', 'postType', 'pollOptions',
+               'scheduledAt', 'createdAt', 'updatedAt'
              ]) &&
              isValidId(data.authorUid) &&
              data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
-             data.authorPhoto is string && data.authorPhoto.size() <= 250000 &&
+             data.authorPhoto is string && data.authorPhoto.size() <= 500000 &&
              data.authorLocation is string && data.authorLocation.size() <= 80 &&
              data.thoughtText is string && data.thoughtText.size() <= 600 &&
-             data.imageData is string && data.imageData.size() <= 250000 &&
+             data.imageData is string && data.imageData.size() <= 700000 &&
              (data.thoughtText.size() >= 1 || data.imageData.size() >= 1) &&
              data.culturalTag is string && data.culturalTag.size() <= 60 &&
+             (!('postType' in data) || (data.postType == 'THOUGHT' || data.postType == 'POLL')) &&
+             (!('pollOptions' in data) || (data.pollOptions is list && data.pollOptions.size() <= 4)) &&
+             (!('postType' in data) || data.postType != 'POLL' || (data.pollOptions is list && data.pollOptions.size() >= 2)) &&
+             (!('scheduledAt' in data) || data.scheduledAt == null || data.scheduledAt is timestamp) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -145,7 +150,7 @@ service cloud.firestore {
              data.sourcePostId is string && data.sourcePostId.size() <= 128 &&
              data.sourceAuthorName is string && data.sourceAuthorName.size() <= 60 &&
              data.sourceExcerpt is string && data.sourceExcerpt.size() <= 300 &&
-             data.imageData is string && data.imageData.size() <= 250000 &&
+             data.imageData is string && data.imageData.size() <= 700000 &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -161,10 +166,10 @@ service cloud.firestore {
              ]) &&
              isValidId(data.fromUid) && isValidId(data.toUid) && data.fromUid != data.toUid &&
              data.fromName is string && data.fromName.size() >= 1 && data.fromName.size() <= 60 &&
-             data.fromPhoto is string && data.fromPhoto.size() <= 250000 &&
+             data.fromPhoto is string && data.fromPhoto.size() <= 500000 &&
              data.fromLocation is string && data.fromLocation.size() <= 80 &&
              data.toName is string && data.toName.size() >= 1 && data.toName.size() <= 60 &&
-             data.toPhoto is string && data.toPhoto.size() <= 250000 &&
+             data.toPhoto is string && data.toPhoto.size() <= 500000 &&
              data.toLocation is string && data.toLocation.size() <= 80 &&
              (data.status == 'PENDING' || data.status == 'APPROVED' || data.status == 'DECLINED' || data.status == 'WITHDRAWN' || data.status == 'EXPIRED') &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
@@ -203,9 +208,9 @@ service cloud.firestore {
              data.userAId == data.memberUids[0] &&
              data.userBId == data.memberUids[1] &&
              data.userAName is string && data.userAName.size() <= 60 &&
-             data.userAPhoto is string && data.userAPhoto.size() <= 250000 &&
+             data.userAPhoto is string && data.userAPhoto.size() <= 500000 &&
              data.userBName is string && data.userBName.size() <= 60 &&
-             data.userBPhoto is string && data.userBPhoto.size() <= 250000 &&
+             data.userBPhoto is string && data.userBPhoto.size() <= 500000 &&
              isValidId(data.connectionId) &&
              (data.status == 'ACTIVE' || data.status == 'MUTED' || data.status == 'BLOCKED') &&
              data.lastMessageText is string && data.lastMessageText.size() <= 200 &&
@@ -222,7 +227,7 @@ service cloud.firestore {
              data.memberUids[0] is string && data.memberUids[1] is string &&
              (data.type == 'TEXT' || data.type == 'IMAGE' || data.type == 'VOICE') &&
              data.text is string && data.text.size() <= 2000 &&
-             data.mediaData is string && data.mediaData.size() <= 250000 &&
+             data.mediaData is string && data.mediaData.size() <= 700000 &&
              data.audioDurationSec is int && data.audioDurationSec >= 0 && data.audioDurationSec <= 60 &&
              data.waveform is list && data.waveform.size() <= 40 &&
              data.moderationStatus == 'active' &&
@@ -247,6 +252,26 @@ service cloud.firestore {
               data.category == 'INAPPROPRIATE_CONTENT' || data.category == 'SCAM' || data.category == 'OTHER') &&
              data.details is string && data.details.size() <= 500 &&
              data.status == 'SUBMITTED' &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidInviteCode(data) {
+      return data.keys().hasAll([
+               'code', 'creatorUid', 'creatorName', 'creatorPhoto',
+               'creatorLocation', 'creatorGender', 'active', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'code', 'creatorUid', 'creatorName', 'creatorPhoto',
+               'creatorLocation', 'creatorGender', 'active', 'createdAt'
+             ]) &&
+             data.code is string && data.code.size() >= 6 && data.code.size() <= 16 &&
+             data.code.matches('^[A-Z0-9]+$') &&
+             isValidId(data.creatorUid) &&
+             data.creatorName is string && data.creatorName.size() >= 1 && data.creatorName.size() <= 60 &&
+             data.creatorPhoto is string && data.creatorPhoto.size() <= 500000 &&
+             data.creatorLocation is string && data.creatorLocation.size() <= 80 &&
+             (data.creatorGender == 'Male' || data.creatorGender == 'Female') &&
+             data.active is bool &&
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
@@ -491,6 +516,12 @@ service cloud.firestore {
                          get(/databases/$(database)/documents/connections/$(conversationId)).data.status == 'ACTIVE' &&
                          get(/databases/$(database)/documents/connections/$(conversationId)).data.memberUids == incoming().memberUids &&
                          !isBlockedEitherWay(incoming().memberUids[0], incoming().memberUids[1]);
+
+        allow delete: if isSignedIn() &&
+                         isValidId(conversationId) &&
+                         isValidId(messageId) &&
+                         resource.data.senderUid == request.auth.uid &&
+                         (request.auth.uid in resource.data.memberUids);
       }
     }
 
@@ -558,6 +589,45 @@ service cloud.firestore {
                          exists(/databases/$(database)/documents/culturePosts/$(postId));
         allow delete: if isSignedIn() && isValidId(postId) && request.auth.uid == uid;
       }
+
+      match /pollVotes/{uid} {
+        allow get, list: if isSignedIn();
+        allow create, update: if isSignedIn() &&
+                                 isValidId(postId) &&
+                                 isValidId(uid) &&
+                                 request.auth.uid == uid &&
+                                 incoming().keys().hasAll(['userUid', 'optionIndex', 'updatedAt']) &&
+                                 incoming().keys().hasOnly(['userUid', 'optionIndex', 'updatedAt']) &&
+                                 incoming().userUid == uid &&
+                                 incoming().optionIndex is int &&
+                                 incoming().optionIndex >= 0 &&
+                                 incoming().optionIndex <= 3 &&
+                                 incoming().updatedAt is timestamp &&
+                                 incoming().updatedAt <= request.time &&
+                                 exists(/databases/$(database)/documents/culturePosts/$(postId));
+        allow delete: if isSignedIn() && isValidId(postId) && request.auth.uid == uid;
+      }
+    }
+
+    // 9. Secret Favorite-Person Invite Codes
+    match /inviteCodes/{code} {
+      allow get: if isSignedIn() &&
+                    isValidId(code) &&
+                    (resource.data.creatorUid == request.auth.uid || resource.data.active == true);
+      allow list: if isSignedIn() && resource.data.creatorUid == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidId(code) &&
+                       isValidInviteCode(incoming()) &&
+                       incoming().code == code &&
+                       incoming().creatorUid == request.auth.uid;
+      allow update: if isSignedIn() &&
+                       isValidId(code) &&
+                       isValidInviteCode(incoming()) &&
+                       existing().creatorUid == request.auth.uid &&
+                       incoming().creatorUid == existing().creatorUid &&
+                       incoming().code == existing().code &&
+                       incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isValidId(code) && resource.data.creatorUid == request.auth.uid;
     }
   }
 }

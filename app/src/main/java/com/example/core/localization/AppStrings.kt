@@ -81,6 +81,8 @@ data class LocalizedStrings(
     val blockUser: String,
     val reportUser: String,
     val emptyMessages: String,
+    val deleteMessageLabel: String,
+    val deleteMessageConfirm: String,
     // Onboarding & Custom Inputs
     val onboardingTitle: String,
     val stepIdentity: String,
@@ -188,7 +190,10 @@ data class LocalizedStrings(
     val deleteAccountLabel: String,
     val deleteAccountConfirm: String,
     val offlineNotice: String,
-    val developerCredit: String
+    val developerCredit: String,
+    val secretInviteCodeTitle: String,
+    val refreshLabel: String,
+    val playQuizCta: String
 )
 
 object AppStrings {
@@ -258,6 +263,8 @@ object AppStrings {
         blockUser = "प्रयोगकर्ता ब्लक गर्नुहोस्",
         reportUser = "रिपोर्ट गर्नुहोस्",
         emptyMessages = "सभ्य र न्यानो अभिवादनबाट कुराकानी सुरु गर्नुहोस्।",
+        deleteMessageLabel = "सन्देश मेटाउनुहोस्",
+        deleteMessageConfirm = "यो सन्देश वा आवाज सन्देश स्थायी रूपमा मेटिनेछ। जारी राख्नुहुन्छ?",
         onboardingTitle = "प्रोफाइल सेटअप",
         stepIdentity = "पहिचान र उमेर",
         stepGender = "लिङ्ग छनोट",
@@ -278,10 +285,10 @@ object AppStrings {
         genderMale = "पुरुष (Male)",
         genderFemale = "महिला (Female)",
         genderEligibilityNote = "पुरुष खाताले योग्य महिला प्रोफाइल र महिला खाताले योग्य पुरुष प्रोफाइल मात्र देख्छन्।",
-        selectPhoto = "फोटो छान्नुहोस् (Photo Picker)",
-        browseFoldersPhoto = "सबै फोल्डर / ग्यालरी फाइल छान्नुहोस्",
+        selectPhoto = "ग्यालरी / फोटोबाट छान्नुहोस्",
+        browseFoldersPhoto = "फाइल वा फोल्डरबाट छान्नुहोस् (JPG/PNG/WEBP)",
         takePhoto = "क्यामेराबाट खिच्नुहोस्",
-        photoRequiredNote = "कम्तीमा १ वास्तविक फोटो आवश्यक छ।",
+        photoRequiredNote = "प्रोफाइल फोटो ऐच्छिक (Optional) छ। फोटो नराखे सुन्दर नेपाली अवतार देखिनेछ र पछि जतिबेला पनि थप्न वा हटाउन सकिन्छ।",
         bioLabel = "छोटो परिचय",
         lookingForLabel = "कस्तो सम्बन्ध खोज्दै हुनुहुन्छ?",
         promptsLabel = "नेपाली सांस्कृतिक प्रश्न र उत्तर (आफ्नै लेख्न सकिने)",
@@ -332,7 +339,7 @@ object AppStrings {
         settings = "सेटिङहरू",
         helpSafety = "सुरक्षा र मद्दत",
         aboutApp = "मेरो मायालुको बारेमा",
-        themeCatalogLabel = "नेपाली विषयवस्तु (Theme)",
+        themeCatalogLabel = "नेपाली विषयवस्तु र सौन्दर्य (१७ थिमहरू)",
         fontCatalogLabel = "फन्ट शैली (Font Style)",
         themeModeLabel = "प्रकाश / अँध्यारो मोड",
         modeSystem = "प्रणाली",
@@ -356,12 +363,15 @@ object AppStrings {
         permissionRequest = "अनुमति दिनुहोस्",
         blockedUsersLabel = "ब्लक गरिएका प्रयोगकर्ताहरू",
         unblock = "अनब्लक",
-        exportDataLabel = "मेरो डेटा निर्यात (JSON)",
+        exportDataLabel = "मेरो डेटा निर्यात (PDF / CSV / TXT / JSON)",
         signOutLabel = "साइन आउट",
         deleteAccountLabel = "खाता स्थायी रूपमा मेटाउनुहोस्",
         deleteAccountConfirm = "यो कार्य फिर्ता गर्न सकिँदैन। तपाईंको प्रोफाइल र डेटा मेटिनेछ।",
         offlineNotice = "अफलाइन हुनुहुन्छ — सर्भर प्रमाणीकरण आवश्यक कार्यहरू रोकिएका छन्।",
-        developerCredit = "राहुल शाहद्वारा मायाका साथ निर्मित"
+        developerCredit = "राहुल शाहद्वारा मायाका साथ निर्मित",
+        secretInviteCodeTitle = "गोप्य निमन्त्रणा कोड",
+        refreshLabel = "ताजा पार्नुहोस्",
+        playQuizCta = "नेपाली संस्कृति र भाषा क्विज खेल्नुहोस्"
     )
 
     val English = LocalizedStrings(
@@ -430,6 +440,8 @@ object AppStrings {
         blockUser = "Block user",
         reportUser = "Report user",
         emptyMessages = "Start with a warm, respectful greeting.",
+        deleteMessageLabel = "Delete permanently",
+        deleteMessageConfirm = "This message or voice note will be permanently deleted for everyone.",
         onboardingTitle = "Profile Setup",
         stepIdentity = "Identity & Age",
         stepGender = "Gender Selection",
@@ -450,10 +462,10 @@ object AppStrings {
         genderMale = "Male",
         genderFemale = "Female",
         genderEligibilityNote = "Male accounts discover eligible Female profiles only; Female accounts discover eligible Male profiles only.",
-        selectPhoto = "Choose from Photo Picker",
-        browseFoldersPhoto = "Browse All Gallery Folders",
+        selectPhoto = "Choose from Gallery / Photos",
+        browseFoldersPhoto = "Browse Files & Folders (JPG/PNG/WEBP)",
         takePhoto = "Take Photo with Camera",
-        photoRequiredNote = "At least 1 authentic profile photo is required.",
+        photoRequiredNote = "Profile photos are optional — skip now to use a custom Nepali lotus avatar, or upload up to 4 photos anytime.",
         bioLabel = "Short Bio",
         lookingForLabel = "What are you looking for?",
         promptsLabel = "Nepali Cultural Prompts & Answers (Custom Supported)",
@@ -504,7 +516,7 @@ object AppStrings {
         settings = "Settings",
         helpSafety = "Safety & Help",
         aboutApp = "About Mero Mayalu",
-        themeCatalogLabel = "Nepali Theme Catalog (10 Themes)",
+        themeCatalogLabel = "Nepali Aesthetic Themes (17 Themes)",
         fontCatalogLabel = "Font Style",
         themeModeLabel = "Appearance Mode",
         modeSystem = "System",
@@ -528,12 +540,15 @@ object AppStrings {
         permissionRequest = "Grant",
         blockedUsersLabel = "Blocked Users",
         unblock = "Unblock",
-        exportDataLabel = "Export My Data (JSON)",
+        exportDataLabel = "Export My Data (PDF / CSV / TXT / JSON)",
         signOutLabel = "Sign Out",
         deleteAccountLabel = "Delete Account Permanently",
         deleteAccountConfirm = "This cannot be undone. Your profile and settings will be deleted.",
         offlineNotice = "You are offline — server-validated actions are paused.",
-        developerCredit = "Made with love by Rahul Shah"
+        developerCredit = "Made with love by Rahul Shah",
+        secretInviteCodeTitle = "Secret Invite Code",
+        refreshLabel = "Refresh",
+        playQuizCta = "Play Nepali Culture & Language Quiz"
     )
 
     fun forLanguage(language: AppLanguage): LocalizedStrings =

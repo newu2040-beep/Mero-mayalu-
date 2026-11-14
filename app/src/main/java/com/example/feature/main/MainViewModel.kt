@@ -13,6 +13,8 @@ import com.example.core.domain.Conversation
 import com.example.core.domain.CulturePost
 import com.example.core.domain.HeritagePlacesResult
 import com.example.core.domain.InterestRequest
+import com.example.core.domain.InviteCodeRecord
+import com.example.core.domain.PollVote
 import com.example.core.domain.PrivateUser
 import com.example.core.domain.PublicProfile
 import com.example.core.domain.SavedNote
@@ -22,6 +24,9 @@ import com.example.core.localization.AppLanguage
 import com.example.core.designsystem.MeroFontCatalog
 import com.example.core.designsystem.MeroThemeCatalog
 import com.example.core.designsystem.MeroThemeMode
+import com.example.core.util.DataExportHelper
+import com.example.core.util.ExportUserData
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -100,8 +105,16 @@ class MainViewModel(
             is UiState.Loading -> UiState.Loading
             is UiState.Error -> state
             is UiState.Success -> {
+                val nowMs = System.currentTimeMillis()
                 val blockedSet = blocked.map { it.blockedUid }.toSet()
-                UiState.Success(state.data.filter { it.authorUid !in blockedSet })
+                UiState.Success(
+                    state.data.filter { post ->
+                        post.authorUid !in blockedSet &&
+                            (post.authorUid == currentUserId ||
+                                post.scheduledAt == null ||
+                                post.scheduledAt.toDate().time <= nowMs)
+                    }
+                )
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
@@ -110,6 +123,10 @@ class MainViewModel(
         .map<List<SavedNote>, UiState<List<SavedNote>>> { UiState.Success(it) }
         .catch { err -> emit(UiState.Error(extractReadableError(err))) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
+
+    val myInviteCode: StateFlow<InviteCodeRecord?> = repository.observeMyInviteCode()
+        .catch { err -> Log.w(TAG, "invite code flow error: ${err.message}") }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
 
     private val _discoverySubTab = MutableStateFlow(DiscoverySubTab.FOR_YOU)
     val discoverySubTab: StateFlow<DiscoverySubTab> = _discoverySubTab.asStateFlow()
@@ -480,6 +497,14 @@ class MainViewModel(
         }
     }
 
+    fun deleteChatMessage(conversationId: String, message: ChatMessage, successToast: String) {
+        viewModelScope.launch {
+            runCatching { repository.deleteMessage(conversationId, message) }
+                .onSuccess { showToast(successToast) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
     fun toggleMuteConversation(conversationId: String, currentlyMuted: Boolean) {
         viewModelScope.launch {
             runCatching { repository.toggleConversationMute(conversationId, currentlyMuted) }
@@ -587,6 +612,23 @@ class MainViewModel(
         }
     }
 
+    fun updateProfilePhotos(
+        photoDataList: List<String>,
+        successToast: String,
+        onDone: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isActionBusy.value = true
+            runCatching { repository.updateProfilePhotos(photoDataList) }
+                .onSuccess {
+                    showToast(successToast)
+                    onDone()
+                }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+            _isActionBusy.value = false
+        }
+    }
+
     fun addCustomInterest(rawInterest: String, successToast: String) {
         val clean = rawInterest.trim().take(32)
         if (clean.isBlank()) return
@@ -621,6 +663,9 @@ class MainViewModel(
         thoughtText: String,
         imageData: String,
         culturalTag: String,
+        postType: String = "THOUGHT",
+        pollOptions: List<String> = emptyList(),
+        scheduledAt: Timestamp? = null,
         successToast: String,
         onDone: () -> Unit = {}
     ) {
@@ -628,10 +673,68 @@ class MainViewModel(
         viewModelScope.launch {
             _isActionBusy.value = true
             runCatching {
-                repository.createCulturePost(author, thoughtText, imageData, culturalTag)
+                repository.createCulturePost(
+                    author = author,
+                    thoughtText = thoughtText,
+                    imageData = imageData,
+                    culturalTag = culturalTag,
+                    postType = postType,
+                    pollOptions = pollOptions,
+                    scheduledAt = scheduledAt
+                )
             }.onSuccess {
                 showToast(successToast)
                 onDone()
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+            _isActionBusy.value = false
+        }
+    }
+
+    fun observePollVotes(postId: String): Flow<List<PollVote>> =
+        repository.observePollVotes(postId)
+
+    fun voteOnPoll(postId: String, optionIndex: Int) {
+        viewModelScope.launch {
+            runCatching { repository.voteOnPoll(postId, optionIndex) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
+    fun generateOrRotateInviteCode(successToast: String) {
+        val myPublic = _session.value.publicProfile ?: return
+        viewModelScope.launch {
+            _isActionBusy.value = true
+            runCatching { repository.generateOrRotateInviteCode(myPublic) }
+                .onSuccess { code -> showToast("$successToast: $code") }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+            _isActionBusy.value = false
+        }
+    }
+
+    fun redeemInviteCode(
+        rawCode: String,
+        activeOutgoingErrorMsg: String,
+        onSuccessDone: () -> Unit = {}
+    ) {
+        val myPublic = _session.value.publicProfile ?: return
+        val outgoing = (outgoingRequests.value as? UiState.Success)?.data.orEmpty()
+        if (outgoing.any { it.status == "PENDING" }) {
+            showToast(activeOutgoingErrorMsg)
+            return
+        }
+        viewModelScope.launch {
+            _isActionBusy.value = true
+            runCatching {
+                val activeId = _session.value.privateUser?.activeOutgoingRequestId.orEmpty()
+                if (activeId.isNotBlank()) {
+                    repository.clearResolvedOutgoingRequest()
+                }
+                repository.redeemInviteCodeAndSendRequest(rawCode, myPublic)
+            }.onSuccess { target ->
+                onSuccessDone()
+                _interestSentTarget.value = target
             }.onFailure { err ->
                 showToast(extractReadableError(err))
             }
@@ -706,27 +809,35 @@ class MainViewModel(
         }
     }
 
-    fun buildExportJson(): String {
+    fun buildExportData(): ExportUserData {
         val priv = _session.value.privateUser
         val pub = _session.value.publicProfile
         val outList = (outgoingRequests.value as? UiState.Success)?.data.orEmpty()
         val inList = (incomingRequests.value as? UiState.Success)?.data.orEmpty()
         val convList = (conversations.value as? UiState.Success)?.data.orEmpty()
-        return buildString {
-            append("{\n")
-            append("  \"uid\": \"${priv?.uid ?: currentUserId}\",\n")
-            append("  \"displayName\": \"${escapeJson(priv?.displayName.orEmpty())}\",\n")
-            append("  \"gender\": \"${priv?.gender.orEmpty()}\",\n")
-            append("  \"age\": ${priv?.age ?: 0},\n")
-            append("  \"district\": \"${escapeJson(pub?.district.orEmpty())}\",\n")
-            append("  \"culturalBadge\": \"${escapeJson(pub?.culturalBadge.orEmpty())}\",\n")
-            append("  \"interests\": [${pub?.interests.orEmpty().joinToString { "\"${escapeJson(it)}\"" }}],\n")
-            append("  \"outgoingRequestsCount\": ${outList.size},\n")
-            append("  \"incomingRequestsCount\": ${inList.size},\n")
-            append("  \"activeConversationsCount\": ${convList.size}\n")
-            append("}")
-        }
+        val notes = (savedNotes.value as? UiState.Success)?.data.orEmpty()
+        return ExportUserData(
+            uid = priv?.uid ?: currentUserId,
+            displayName = priv?.displayName ?: pub?.displayName.orEmpty(),
+            gender = priv?.gender.orEmpty(),
+            age = priv?.age ?: 0,
+            dateOfBirthPrivate = priv?.dateOfBirthPrivate.orEmpty(),
+            province = pub?.province.orEmpty(),
+            district = pub?.district.orEmpty(),
+            municipality = pub?.municipality.orEmpty(),
+            culturalBadge = pub?.culturalBadge.orEmpty(),
+            bio = pub?.bio.orEmpty(),
+            lookingFor = pub?.lookingFor.orEmpty(),
+            interests = pub?.interests.orEmpty(),
+            prompts = pub?.prompts.orEmpty(),
+            outgoingRequestsCount = outList.size,
+            incomingRequestsCount = inList.size,
+            activeConversationsCount = convList.size,
+            savedNotes = notes
+        )
     }
+
+    fun buildExportJson(): String = DataExportHelper.toJson(buildExportData())
 
     fun deleteAccount(onDeleted: () -> Unit) {
         viewModelScope.launch {
@@ -740,9 +851,6 @@ class MainViewModel(
 
     suspend fun loadPublicProfile(uid: String): PublicProfile? =
         runCatching { repository.getPublicProfile(uid) }.getOrNull()
-
-    private fun escapeJson(s: String): String =
-        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
 
     private fun coordsForDistrict(district: String): Pair<Double, Double> = when (district.lowercase()) {
         "lalitpur" -> 27.6588 to 85.3247

@@ -648,6 +648,18 @@ fun MeroLotusEmblem(size: Dp, tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
+private fun extractInitials(rawName: String): String {
+    val parts = rawName.trim()
+        .substringBefore(",")
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+    return when {
+        parts.isEmpty() -> "मे"
+        parts.size == 1 -> parts[0].take(1).uppercase()
+        else -> (parts[0].take(1) + parts.last().take(1)).uppercase()
+    }
+}
+
 @Composable
 fun MeroAvatarImage(
     photoData: String?,
@@ -664,13 +676,22 @@ fun MeroAvatarImage(
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
         }.getOrNull()
     }
+    val initials = remember(displayName) { extractInitials(displayName) }
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(colors.surface2)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        colors.primary.copy(alpha = 0.24f),
+                        colors.surface2,
+                        colors.primary.copy(alpha = 0.14f)
+                    )
+                )
+            )
             .border(2.dp, colors.surface, CircleShape)
     ) {
         if (bitmap != null) {
@@ -681,9 +702,18 @@ fun MeroAvatarImage(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
+            MeroLotusEmblem(
+                size = size * 0.68f,
+                tint = colors.primary.copy(alpha = 0.16f)
+            )
             Text(
-                text = displayName.trim().take(1).uppercase().ifEmpty { "?" },
-                style = MeroType.Heading.copy(color = colors.primary, fontWeight = FontWeight.Bold)
+                text = initials,
+                style = if (size >= 80.dp) {
+                    MeroType.Title.copy(color = colors.primary, fontWeight = FontWeight.Bold)
+                } else {
+                    MeroType.Heading.copy(color = colors.primary, fontWeight = FontWeight.Bold)
+                },
+                maxLines = 1
             )
         }
     }
@@ -704,9 +734,19 @@ fun MeroPhotoBox(
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
         }.getOrNull()
     }
+    val initials = remember(contentDescription) { extractInitials(contentDescription) }
+
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.background(colors.surface2)
+        modifier = modifier.background(
+            Brush.verticalGradient(
+                colors = listOf(
+                    colors.surface2,
+                    colors.primary.copy(alpha = 0.22f),
+                    colors.surface
+                )
+            )
+        )
     ) {
         if (bitmap != null) {
             Image(
@@ -716,12 +756,29 @@ fun MeroPhotoBox(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            Icon(
-                imageVector = Icons.Filled.Person,
-                contentDescription = contentDescription,
-                tint = colors.textMuted,
-                modifier = Modifier.size(48.dp)
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                modifier = Modifier.padding(MeroSpacing.lg)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(88.dp)
+                        .clip(CircleShape)
+                        .background(colors.surface.copy(alpha = 0.85f))
+                        .border(2.dp, colors.primary.copy(alpha = 0.35f), CircleShape)
+                ) {
+                    MeroLotusEmblem(
+                        size = 56.dp,
+                        tint = colors.primary.copy(alpha = 0.22f)
+                    )
+                    Text(
+                        text = initials,
+                        style = MeroType.Title.copy(color = colors.primary, fontWeight = FontWeight.Bold)
+                    )
+                }
+            }
         }
     }
 }

@@ -37,7 +37,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FolderOpen
@@ -73,11 +75,14 @@ import androidx.core.content.FileProvider
 import com.example.core.designsystem.LocalMeroColors
 import com.example.core.designsystem.MeroAvatarImage
 import com.example.core.designsystem.MeroBannerImage
+import com.example.core.designsystem.MeroButton
 import com.example.core.designsystem.MeroCard
 import com.example.core.designsystem.MeroChip
 import com.example.core.designsystem.MeroIconButton
 import com.example.core.designsystem.MeroInput
 import com.example.core.designsystem.MeroListItem
+import com.example.core.designsystem.MeroLoadingState
+import com.example.core.designsystem.MeroPhotoBox
 import com.example.core.designsystem.MeroRadius
 import com.example.core.designsystem.MeroSecondaryButton
 import com.example.core.designsystem.MeroSpacing
@@ -87,6 +92,7 @@ import com.example.core.domain.PublicProfile
 import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
 import com.example.core.util.MediaHelper
+import com.example.core.util.MediaUploadResult
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -99,6 +105,7 @@ fun ProfileScreen(
     matchesCount: Int,
     chatsCount: Int,
     onUpdateBanner: (String) -> Unit,
+    onUpdateProfilePhotos: (List<String>) -> Unit,
     onAddCustomInterest: (String) -> Unit,
     onRemoveInterest: (String) -> Unit,
     onOpenSavedNotes: () -> Unit,
@@ -117,65 +124,158 @@ fun ProfileScreen(
     val scope = rememberCoroutineScope()
 
     var showBannerSheet by remember { mutableStateOf(false) }
+    var showPhotoManagerSheet by remember { mutableStateOf(false) }
     var customInterestInput by remember { mutableStateOf("") }
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var bannerCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var avatarCameraUri by remember { mutableStateOf<Uri?>(null) }
+
+    // Banner upload state (preview before saving + progress + retry)
+    var isProcessingBanner by remember { mutableStateOf(false) }
+    var pendingBannerPreview by remember { mutableStateOf<String?>(null) }
+    var lastFailedBannerUri by remember { mutableStateOf<Uri?>(null) }
+    var bannerUploadError by remember { mutableStateOf<String?>(null) }
+
+    // Profile Photo Manager state (preview before saving + progress + retry)
+    var isProcessingAvatar by remember { mutableStateOf(false) }
+    var pendingAvatarPreview by remember { mutableStateOf<String?>(null) }
+    var lastFailedAvatarUri by remember { mutableStateOf<Uri?>(null) }
+    var avatarUploadError by remember { mutableStateOf<String?>(null) }
+
+    fun handleBannerUri(uri: Uri) {
+        scope.launch {
+            isProcessingBanner = true
+            bannerUploadError = null
+            lastFailedBannerUri = null
+            when (val res = MediaHelper.processImageUriWithResult(context, uri, hd = true)) {
+                is MediaUploadResult.Success -> {
+                    pendingBannerPreview = res.dataUri
+                }
+                is MediaUploadResult.Error -> {
+                    lastFailedBannerUri = uri
+                    bannerUploadError = if (isNe) res.messageNe else res.messageEn
+                }
+            }
+            isProcessingBanner = false
+        }
+    }
+
+    fun handleAvatarUri(uri: Uri) {
+        scope.launch {
+            isProcessingAvatar = true
+            avatarUploadError = null
+            lastFailedAvatarUri = null
+            when (val res = MediaHelper.processImageUriWithResult(context, uri, hd = true)) {
+                is MediaUploadResult.Success -> {
+                    pendingAvatarPreview = res.dataUri
+                }
+                is MediaUploadResult.Error -> {
+                    lastFailedAvatarUri = uri
+                    avatarUploadError = if (isNe) res.messageNe else res.messageEn
+                }
+            }
+            isProcessingAvatar = false
+        }
+    }
+
+    val bannerLegacyPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) handleBannerUri(uri)
+    }
 
     val bannerPhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val compressed = MediaHelper.compressUriToDataUri(context, uri)
-                if (compressed != null) {
-                    onUpdateBanner(compressed)
-                    showBannerSheet = false
-                }
-            }
-        }
+        if (uri != null) handleBannerUri(uri)
     }
 
     val bannerFolderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val compressed = MediaHelper.compressUriToDataUri(context, uri)
-                if (compressed != null) {
-                    onUpdateBanner(compressed)
-                    showBannerSheet = false
-                }
-            }
-        }
+        if (uri != null) handleBannerUri(uri)
     }
 
     val bannerCameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        val uri = cameraUri
+        val uri = bannerCameraUri
         if (success && uri != null) {
-            scope.launch {
-                val compressed = MediaHelper.compressUriToDataUri(context, uri)
-                if (compressed != null) {
-                    onUpdateBanner(compressed)
-                    showBannerSheet = false
-                }
-            }
+            handleBannerUri(uri)
         }
     }
 
     fun launchBannerCamera() {
-        val dir = File(context.cacheDir, "images").apply { mkdirs() }
-        val file = File(dir, "banner_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        cameraUri = uri
-        bannerCameraLauncher.launch(uri)
+        runCatching {
+            val dir = File(context.cacheDir, "images").apply { mkdirs() }
+            val file = File(dir, "banner_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            bannerCameraUri = uri
+            bannerCameraLauncher.launch(uri)
+        }.onFailure {
+            bannerUploadError = if (isNe) {
+                "क्यामेरा खोल्न सकिएन। कृपया ग्यालरीबाट छान्नुहोस्।"
+            } else {
+                "Could not open camera on this device. Please select a photo from gallery."
+            }
+        }
     }
 
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+    val bannerCameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) launchBannerCamera()
-        else onShowError(if (isNe) "क्यामेरा अनुमति आवश्यक छ।" else "Camera permission is required.")
+        else bannerUploadError = if (isNe) "क्यामेरा अनुमति आवश्यक छ।" else "Camera permission is required."
+    }
+
+    // Profile Photo Manager launchers
+    val avatarLegacyPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) handleAvatarUri(uri)
+    }
+
+    val avatarPhotoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) handleAvatarUri(uri)
+    }
+
+    val avatarFolderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) handleAvatarUri(uri)
+    }
+
+    val avatarCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = avatarCameraUri
+        if (success && uri != null) {
+            handleAvatarUri(uri)
+        }
+    }
+
+    fun launchAvatarCamera() {
+        runCatching {
+            val dir = File(context.cacheDir, "images").apply { mkdirs() }
+            val file = File(dir, "avatar_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            avatarCameraUri = uri
+            avatarCameraLauncher.launch(uri)
+        }.onFailure {
+            avatarUploadError = if (isNe) {
+                "क्यामेरा खोल्न सकिएन। कृपया ग्यालरी वा फाइलबाट फोटो छान्नुहोस्।"
+            } else {
+                "Could not open camera on this device. Please select a photo from Gallery or Files."
+            }
+        }
+    }
+
+    val avatarCameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) launchAvatarCamera()
+        else avatarUploadError = if (isNe) "क्यामेरा अनुमति आवश्यक छ।" else "Camera permission is required."
     }
 
     LazyColumn(
@@ -222,7 +322,11 @@ fun ProfileScreen(
                         modifier = Modifier
                             .defaultMinSize(minHeight = 44.dp)
                             .clip(RoundedCornerShape(MeroRadius.pill))
-                            .clickable { showBannerSheet = true }
+                            .clickable {
+                                bannerUploadError = null
+                                pendingBannerPreview = null
+                                showBannerSheet = true
+                            }
                             .testTag("profile_customize_banner_button")
                     ) {
                         Row(
@@ -260,7 +364,16 @@ fun ProfileScreen(
                         .fillMaxWidth()
                         .padding(top = 104.dp, start = MeroSpacing.lg, end = MeroSpacing.lg)
                 ) {
-                    Box(contentAlignment = Alignment.BottomEnd) {
+                    Box(
+                        contentAlignment = Alignment.BottomEnd,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable {
+                                avatarUploadError = null
+                                pendingAvatarPreview = null
+                                showPhotoManagerSheet = true
+                            }
+                    ) {
                         MeroAvatarImage(
                             photoData = profile?.photoDataList?.firstOrNull(),
                             displayName = profile?.displayName ?: "?",
@@ -270,16 +383,20 @@ fun ProfileScreen(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .offset(x = 2.dp, y = 2.dp)
-                                .size(36.dp)
+                                .size(38.dp)
                                 .clip(CircleShape)
                                 .background(colors.primary)
                                 .border(2.dp, colors.bg, CircleShape)
-                                .clickable(onClick = onEditProfile)
+                                .clickable {
+                                    avatarUploadError = null
+                                    pendingAvatarPreview = null
+                                    showPhotoManagerSheet = true
+                                }
                                 .testTag("profile_avatar_edit_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Edit,
-                                contentDescription = s.editProfile,
+                                imageVector = Icons.Filled.AddAPhoto,
+                                contentDescription = s.stepPhoto,
                                 tint = colors.onPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -440,6 +557,21 @@ fun ProfileScreen(
                     .widthIn(max = 560.dp)
             ) {
                 MeroListItem(
+                    title = if (isNe) "प्रोफाइल फोटो थप्नुहोस् / बदल्नुहोस् / हटाउनुहोस्" else "Profile Photo (Add, Change, or Remove)",
+                    subtitle = if (profile?.photoDataList.isNullOrEmpty()) {
+                        if (isNe) "डिफल्ट नेपाली अवतार सक्रिय छ (ऐच्छिक)" else "Using default Nepali avatar (Optional)"
+                    } else {
+                        if (isNe) "${profile?.photoDataList?.size ?: 0}/4 फोटो राखिएको छ" else "${profile?.photoDataList?.size ?: 0}/4 photos saved"
+                    },
+                    leadingIcon = Icons.Filled.AddAPhoto,
+                    onClick = {
+                        avatarUploadError = null
+                        pendingAvatarPreview = null
+                        showPhotoManagerSheet = true
+                    },
+                    testTag = "profile_manage_photo_row"
+                )
+                MeroListItem(
                     title = s.mySavedNotesShortcut,
                     leadingIcon = Icons.Filled.BookmarkAdd,
                     onClick = onOpenSavedNotes,
@@ -473,6 +605,216 @@ fun ProfileScreen(
         }
     }
 
+    // Profile Photo Manager Sheet (Add / Preview / Update / Remove anytime)
+    if (showPhotoManagerSheet) {
+        val currentPhotos = profile?.photoDataList.orEmpty()
+        ModalBottomSheet(
+            onDismissRequest = { showPhotoManagerSheet = false },
+            containerColor = colors.surface
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(MeroSpacing.md),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.sm)
+            ) {
+                Text(
+                    text = if (isNe) "प्रोफाइल फोटो व्यवस्थापन (ऐच्छिक)" else "Profile Photo Manager (Optional)",
+                    style = MeroType.Heading.copy(color = colors.text)
+                )
+                Text(
+                    text = s.photoRequiredNote,
+                    style = MeroType.Caption.copy(color = colors.textMuted)
+                )
+
+                if (isProcessingAvatar) {
+                    MeroLoadingState(
+                        message = if (isNe) "फोटो अनुकूलन र पूर्वावलोकन तयार हुँदैछ..." else "Optimizing image & preparing preview..."
+                    )
+                }
+
+                if (avatarUploadError != null) {
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.small),
+                        color = colors.danger.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                            modifier = Modifier.padding(MeroSpacing.md)
+                        ) {
+                            Text(
+                                text = avatarUploadError.orEmpty(),
+                                style = MeroType.Caption.copy(color = colors.danger, fontWeight = FontWeight.Medium)
+                            )
+                            if (lastFailedAvatarUri != null) {
+                                MeroSecondaryButton(
+                                    text = s.retry,
+                                    onClick = {
+                                        val retryUri = lastFailedAvatarUri
+                                        if (retryUri != null) handleAvatarUri(retryUri)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    testTag = "avatar_retry_upload_button"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                val preview = pendingAvatarPreview
+                if (preview != null) {
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.card),
+                        color = colors.surface2,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(MeroSpacing.md)
+                        ) {
+                            Text(
+                                text = if (isNe) "नयाँ प्रोफाइल फोटो पूर्वावलोकन" else "New Profile Photo Preview",
+                                style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Bold)
+                            )
+                            MeroAvatarImage(
+                                photoData = preview,
+                                displayName = profile?.displayName ?: "?",
+                                size = 120.dp
+                            )
+                            MeroButton(
+                                text = if (isNe) "मुख्य प्रोफाइल फोटोको रूपमा सुरक्षित गर्नुहोस्" else "Save as Primary Profile Photo",
+                                leadingIcon = Icons.Filled.Check,
+                                onClick = {
+                                    val updated = (listOf(preview) + currentPhotos.filterNot { it == preview }).take(4)
+                                    onUpdateProfilePhotos(updated)
+                                    pendingAvatarPreview = null
+                                    showPhotoManagerSheet = false
+                                },
+                                testTag = "avatar_confirm_save_button"
+                            )
+                            MeroSecondaryButton(
+                                text = s.cancel,
+                                onClick = { pendingAvatarPreview = null },
+                                modifier = Modifier.fillMaxWidth(),
+                                testTag = "avatar_discard_preview_button"
+                            )
+                        }
+                    }
+                }
+
+                if (currentPhotos.isNotEmpty()) {
+                    Text(
+                        text = if (isNe) "हालका प्रोफाइल फोटोहरू (${currentPhotos.size}/4)" else "Current Profile Photos (${currentPhotos.size}/4)",
+                        style = MeroType.Caption.copy(color = colors.text, fontWeight = FontWeight.Medium)
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                        verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        currentPhotos.forEachIndexed { idx, photo ->
+                            Box(
+                                modifier = Modifier
+                                    .size(104.dp)
+                                    .clip(RoundedCornerShape(MeroRadius.card))
+                            ) {
+                                MeroPhotoBox(
+                                    photoData = photo,
+                                    contentDescription = "Profile photo ${idx + 1}",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(MeroSpacing.xs)
+                                        .clip(RoundedCornerShape(MeroRadius.pill))
+                                        .background(colors.bg.copy(alpha = 0.85f))
+                                ) {
+                                    MeroIconButton(
+                                        icon = Icons.Filled.Delete,
+                                        contentDescription = "Remove photo",
+                                        tint = colors.danger,
+                                        onClick = {
+                                            val remaining = currentPhotos.filterIndexed { i, _ -> i != idx }
+                                            onUpdateProfilePhotos(remaining)
+                                        },
+                                        testTag = "profile_remove_photo_$idx"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                MeroSecondaryButton(
+                    text = s.selectPhoto,
+                    leadingIcon = Icons.Filled.AddAPhoto,
+                    enabled = !isProcessingAvatar,
+                    onClick = {
+                        runCatching {
+                            avatarPhotoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }.onFailure {
+                            avatarLegacyPicker.launch("image/*")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "profile_photo_pick_gallery"
+                )
+                MeroSecondaryButton(
+                    text = s.browseFoldersPhoto,
+                    leadingIcon = Icons.Filled.FolderOpen,
+                    enabled = !isProcessingAvatar,
+                    onClick = {
+                        runCatching {
+                            avatarFolderPicker.launch(MediaHelper.SUPPORTED_IMAGE_MIMES)
+                        }.onFailure {
+                            avatarLegacyPicker.launch("image/*")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "profile_photo_browse_files"
+                )
+                MeroSecondaryButton(
+                    text = s.takePhoto,
+                    leadingIcon = Icons.Filled.CameraAlt,
+                    enabled = !isProcessingAvatar,
+                    onClick = {
+                        val granted = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (granted) launchAvatarCamera()
+                        else avatarCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "profile_photo_take_camera"
+                )
+
+                if (currentPhotos.isNotEmpty()) {
+                    MeroSecondaryButton(
+                        text = if (isNe) "प्रोफाइल फोटो हटाउनुहोस् (डिफल्ट अवतार राख्नुहोस्)" else "Remove Profile Picture (Use Default Avatar)",
+                        leadingIcon = Icons.Filled.Delete,
+                        isDanger = true,
+                        onClick = {
+                            onUpdateProfilePhotos(emptyList())
+                            pendingAvatarPreview = null
+                            showPhotoManagerSheet = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "profile_remove_all_photos_button"
+                    )
+                }
+
+                Spacer(Modifier.height(MeroSpacing.lg))
+            }
+        }
+    }
+
     if (showBannerSheet) {
         ModalBottomSheet(
             onDismissRequest = { showBannerSheet = false },
@@ -490,13 +832,69 @@ fun ProfileScreen(
                     style = MeroType.Heading.copy(color = colors.text)
                 )
                 MeroBannerImage(
-                    bannerData = profile?.bannerData,
+                    bannerData = pendingBannerPreview ?: profile?.bannerData,
                     contentDescription = s.customizeBanner,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp)
                         .clip(RoundedCornerShape(MeroRadius.card))
                 )
+
+                if (isProcessingBanner) {
+                    MeroLoadingState(
+                        message = if (isNe) "HD ब्यानर तयार हुँदैछ..." else "Preparing HD banner preview..."
+                    )
+                }
+
+                if (bannerUploadError != null) {
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.small),
+                        color = colors.danger.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                            modifier = Modifier.padding(MeroSpacing.md)
+                        ) {
+                            Text(
+                                text = bannerUploadError.orEmpty(),
+                                style = MeroType.Caption.copy(color = colors.danger, fontWeight = FontWeight.Medium)
+                            )
+                            if (lastFailedBannerUri != null) {
+                                MeroSecondaryButton(
+                                    text = s.retry,
+                                    onClick = {
+                                        val retryUri = lastFailedBannerUri
+                                        if (retryUri != null) handleBannerUri(retryUri)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    testTag = "banner_retry_upload_button"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                val bannerPreview = pendingBannerPreview
+                if (bannerPreview != null) {
+                    MeroButton(
+                        text = if (isNe) "यो ब्यानर सुरक्षित गर्नुहोस्" else "Save Custom Banner",
+                        leadingIcon = Icons.Filled.Check,
+                        onClick = {
+                            onUpdateBanner(bannerPreview)
+                            pendingBannerPreview = null
+                            showBannerSheet = false
+                        },
+                        testTag = "banner_confirm_save_button"
+                    )
+                    MeroSecondaryButton(
+                        text = s.cancel,
+                        onClick = { pendingBannerPreview = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "banner_discard_preview_button"
+                    )
+                }
+
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
                     verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
@@ -504,8 +902,9 @@ fun ProfileScreen(
                     ProfileBannerPreset.entries.forEach { preset ->
                         MeroChip(
                             label = if (isNe) preset.labelNe else preset.labelEn,
-                            selected = profile?.bannerData == preset.id,
+                            selected = profile?.bannerData == preset.id && pendingBannerPreview == null,
                             onClick = {
+                                pendingBannerPreview = null
                                 onUpdateBanner(preset.id)
                                 showBannerSheet = false
                             },
@@ -516,10 +915,15 @@ fun ProfileScreen(
                 MeroSecondaryButton(
                     text = s.selectPhoto,
                     leadingIcon = Icons.Filled.AddAPhoto,
+                    enabled = !isProcessingBanner,
                     onClick = {
-                        bannerPhotoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                        runCatching {
+                            bannerPhotoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }.onFailure {
+                            bannerLegacyPicker.launch("image/*")
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     testTag = "banner_pick_photo"
@@ -527,20 +931,28 @@ fun ProfileScreen(
                 MeroSecondaryButton(
                     text = s.browseFoldersPhoto,
                     leadingIcon = Icons.Filled.FolderOpen,
-                    onClick = { bannerFolderPicker.launch(arrayOf("image/*")) },
+                    enabled = !isProcessingBanner,
+                    onClick = {
+                        runCatching {
+                            bannerFolderPicker.launch(MediaHelper.SUPPORTED_IMAGE_MIMES)
+                        }.onFailure {
+                            bannerLegacyPicker.launch("image/*")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     testTag = "banner_browse_folders"
                 )
                 MeroSecondaryButton(
                     text = s.takePhoto,
                     leadingIcon = Icons.Filled.CameraAlt,
+                    enabled = !isProcessingBanner,
                     onClick = {
                         val granted = ContextCompat.checkSelfPermission(
                             context,
                             Manifest.permission.CAMERA
                         ) == PackageManager.PERMISSION_GRANTED
                         if (granted) launchBannerCamera()
-                        else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        else bannerCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     testTag = "banner_take_photo"

@@ -1,0 +1,12 @@
+*.apk binary
+*.aab binary
+*.jks binary
+*.keystore binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.base64 text eol=lf
+*.sha256 text eol=lf

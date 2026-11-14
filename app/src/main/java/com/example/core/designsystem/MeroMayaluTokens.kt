@@ -14,6 +14,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -52,10 +53,46 @@ val NotoDevanagariFontFamily = FontFamily(
     Font(R.font.noto_sans_devanagari, FontWeight.Bold)
 )
 
+val NotoSerifDevanagariFontFamily = FontFamily(
+    Font(R.font.noto_serif_devanagari, FontWeight.Normal),
+    Font(R.font.noto_serif_devanagari, FontWeight.Medium),
+    Font(R.font.noto_serif_devanagari, FontWeight.Bold)
+)
+
 val HindFontFamily = FontFamily(
     Font(R.font.hind, FontWeight.Normal),
     Font(R.font.hind, FontWeight.Medium),
     Font(R.font.hind, FontWeight.Bold)
+)
+
+val YantramanavFontFamily = FontFamily(
+    Font(R.font.yantramanav, FontWeight.Normal),
+    Font(R.font.yantramanav, FontWeight.Medium),
+    Font(R.font.yantramanav, FontWeight.Bold)
+)
+
+val BiryaniFontFamily = FontFamily(
+    Font(R.font.biryani, FontWeight.Normal),
+    Font(R.font.biryani, FontWeight.Medium),
+    Font(R.font.biryani, FontWeight.Bold)
+)
+
+val KhandFontFamily = FontFamily(
+    Font(R.font.khand, FontWeight.Normal),
+    Font(R.font.khand, FontWeight.Medium),
+    Font(R.font.khand, FontWeight.Bold)
+)
+
+val RajdhaniFontFamily = FontFamily(
+    Font(R.font.rajdhani, FontWeight.Normal),
+    Font(R.font.rajdhani, FontWeight.Medium),
+    Font(R.font.rajdhani, FontWeight.Bold)
+)
+
+val PoppinsFontFamily = FontFamily(
+    Font(R.font.poppins, FontWeight.Normal),
+    Font(R.font.poppins, FontWeight.Medium),
+    Font(R.font.poppins, FontWeight.Bold)
 )
 
 val KalamFontFamily = FontFamily(
@@ -70,10 +107,17 @@ enum class MeroFontCatalog(
     val labelNe: String,
     val fontFamily: FontFamily
 ) {
-    MUKTA("mukta", "Mukta", "मुक्ता", MuktaFontFamily),
-    NOTO_DEVANAGARI("noto_devanagari", "Noto Devanagari", "नोटो देवनागरी", NotoDevanagariFontFamily),
-    HIND("hind", "Hind", "हिन्द", HindFontFamily),
-    KALAM("kalam", "Kalam", "कलम (हस्तलिखित)", KalamFontFamily);
+    SYSTEM("system", "System Default", "प्रणाली डिफल्ट", FontFamily.Default),
+    MUKTA("mukta", "Mukta (Nepali Modern)", "मुक्ता (आधुनिक नेपाली)", MuktaFontFamily),
+    NOTO_DEVANAGARI("noto_devanagari", "Noto Sans Devanagari", "नोटो सान्स देवनागरी", NotoDevanagariFontFamily),
+    NOTO_SERIF_DEVANAGARI("noto_serif_devanagari", "Noto Serif Devanagari", "नोटो सेरिफ देवनागरी (शास्त्रीय)", NotoSerifDevanagariFontFamily),
+    HIND("hind", "Hind Devanagari", "हिन्द देवनागरी", HindFontFamily),
+    YANTRAMANAV("yantramanav", "Yantramanav Clean", "यन्त्रमानव (स्पष्ट)", YantramanavFontFamily),
+    BIRYANI("biryani", "Biryani Rounded", "बिरयानी (सन्तुलित)", BiryaniFontFamily),
+    KHAND("khand", "Khand Display", "खण्ड (शीर्षक शैली)", KhandFontFamily),
+    RAJDHANI("rajdhani", "Rajdhani Geometric", "राजधानी", RajdhaniFontFamily),
+    POPPINS("poppins", "Poppins Contemporary", "पपिन्स", PoppinsFontFamily),
+    KALAM("kalam", "Kalam Handwritten", "कलम (हस्तलिखित)", KalamFontFamily);
 
     companion object {
         fun fromId(id: String): MeroFontCatalog =
@@ -82,6 +126,8 @@ enum class MeroFontCatalog(
 }
 
 val LocalMeroFontFamily = staticCompositionLocalOf { MuktaFontFamily }
+
+private val DevanagariPlatformTextStyle = PlatformTextStyle(includeFontPadding = true)
 
 // --- STRICT TYPE SCALE (Title 22/28 Bold, Heading 18/24 Medium, Body 15/22 Regular, Caption 12/16 Regular) ---
 object MeroType {
@@ -92,7 +138,8 @@ object MeroType {
             fontFamily = LocalMeroFontFamily.current,
             fontWeight = FontWeight.Bold,
             fontSize = 22.sp,
-            lineHeight = 28.sp
+            lineHeight = 28.sp,
+            platformStyle = DevanagariPlatformTextStyle
         )
 
     val Heading: TextStyle
@@ -102,7 +149,8 @@ object MeroType {
             fontFamily = LocalMeroFontFamily.current,
             fontWeight = FontWeight.Medium,
             fontSize = 18.sp,
-            lineHeight = 24.sp
+            lineHeight = 24.sp,
+            platformStyle = DevanagariPlatformTextStyle
         )
 
     val Body: TextStyle
@@ -112,7 +160,8 @@ object MeroType {
             fontFamily = LocalMeroFontFamily.current,
             fontWeight = FontWeight.Normal,
             fontSize = 15.sp,
-            lineHeight = 22.sp
+            lineHeight = 22.sp,
+            platformStyle = DevanagariPlatformTextStyle
         )
 
     val Caption: TextStyle
@@ -122,7 +171,8 @@ object MeroType {
             fontFamily = LocalMeroFontFamily.current,
             fontWeight = FontWeight.Normal,
             fontSize = 12.sp,
-            lineHeight = 16.sp
+            lineHeight = 16.sp,
+            platformStyle = DevanagariPlatformTextStyle
         )
 }
 
@@ -142,14 +192,21 @@ data class MeroColors(
 )
 
 enum class MeroThemeCatalog(val id: String, val labelEn: String, val labelNe: String) {
-    HIMALAYAN_DUSK("himalayan_dusk", "Himalayan Dusk", "हिमाली गोधूलि"),
-    NEWARI_HERITAGE("newari_heritage", "Newari Heritage", "नेवारी सम्पदा"),
-    RHODODENDRON("rhododendron", "Rhododendron", "लालीगुराँस"),
+    HIMALAYAN_DUSK("himalayan_dusk", "Himalayan Sunset", "हिमाली सूर्यास्त (गोधूलि)"),
+    TRADITIONAL_NEPALI("traditional_nepali", "Traditional Nepali Cultural", "परम्परागत नेपाली सांस्कृतिक (ढाका)"),
+    KATHMANDU_HERITAGE("kathmandu_heritage", "Kathmandu Heritage", "काठमाडौँ सम्पदा"),
+    EVEREST_SNOW("everest_snow", "Himalayan Mountain", "हिमालय पर्वत (सगरमाथा)"),
+    NEPALI_NATIONAL("nepali_national", "Nepali Crimson & Blue", "नेपाली सिम्रिक र निलो (राष्ट्रिय)"),
+    PASHMINA_ELEGANT("pashmina_elegant", "Pashmina Elegance", "पश्मिना राजसी"),
+    NEWARI_HERITAGE("newari_heritage", "Newari Art & Architecture", "नेवारी कला र वास्तुकला"),
+    MINIMAL_NEPALI("minimal_nepali", "Minimal Nepali (Lokta)", "सरल नेपाली सौन्दर्य (लोक्ता)"),
+    DASHAIN_FESTIVAL("dashain_festival", "Dashain Festival", "दशैं टीका र जमरा"),
+    TIHAR_GLOW("tihar_glow", "Tihar Festival Glow", "तिहार झिलिमिली र सयपत्री"),
+    SOFT_PASTEL_NEPALI("soft_pastel_nepali", "Soft Pastel Nepali", "कोमल पेस्टल नेपाली"),
+    RHODODENDRON("rhododendron", "Rhododendron Forest", "लालीगुराँस वन"),
     MONSOON_MIST("monsoon_mist", "Monsoon Mist", "वर्षा कुहिरो"),
-    TIHAR_GLOW("tihar_glow", "Tihar Glow", "तिहार झिलिमिली"),
     PATAN_EVENING("patan_evening", "Patan Evening", "पाटन साँझ"),
-    EVEREST_SNOW("everest_snow", "Everest Snow", "सगरमाथा हिउँ"),
-    POKHARA_PHEWA("pokhara_phewa", "Pokhara Phewa", "फेवा ताल"),
+    POKHARA_PHEWA("pokhara_phewa", "Pokhara Phewa Lake", "फेवा ताल"),
     MUSTANG_CANYON("mustang_canyon", "Mustang Canyon", "मुस्ताङ घाटी"),
     ILAM_TEA("ilam_tea", "Ilam Tea Hills", "इलाम चियाबारी");
 
@@ -216,6 +273,110 @@ fun tokensFor(catalog: MeroThemeCatalog, dark: Boolean): MeroColors {
             isDark = true
         )
 
+        MeroThemeCatalog.TRADITIONAL_NEPALI -> if (!dark) MeroColors(
+            bg = Color(0xFFFCF5F3),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFF5E2DD),
+            primary = Color(0xFFA61B29),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF231012),
+            textMuted = Color(0xFF68474A),
+            border = Color(0xFFE6C9C3),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF1D6F3E),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF1A0B0D),
+            surface = Color(0xFF2B1417),
+            surface2 = Color(0xFF3E1E22),
+            primary = Color(0xFFF06472),
+            onPrimary = Color(0xFF1F070A),
+            text = Color(0xFFFDF2F3),
+            textMuted = Color(0xFFD6B4B7),
+            border = Color(0xFF592D33),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.KATHMANDU_HERITAGE -> if (!dark) MeroColors(
+            bg = Color(0xFFFBF6EE),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFF1E3D0),
+            primary = Color(0xFF7D3218),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF23160E),
+            textMuted = Color(0xFF665041),
+            border = Color(0xFFE2CDB5),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF1F6E3D),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF19110B),
+            surface = Color(0xFF281C13),
+            surface2 = Color(0xFF3B291D),
+            primary = Color(0xFFE28B63),
+            onPrimary = Color(0xFF1F1108),
+            text = Color(0xFFFCF5EC),
+            textMuted = Color(0xFFD3BCA8),
+            border = Color(0xFF543C2B),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.NEPALI_NATIONAL -> if (!dark) MeroColors(
+            bg = Color(0xFFF5F7FC),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFE3E9F7),
+            primary = Color(0xFFB8143A),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF0E1B38),
+            textMuted = Color(0xFF3E5078),
+            border = Color(0xFFC7D3EC),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF176E40),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF0B1326),
+            surface = Color(0xFF152240),
+            surface2 = Color(0xFF21335C),
+            primary = Color(0xFFFF5C7C),
+            onPrimary = Color(0xFF1B040B),
+            text = Color(0xFFF2F6FF),
+            textMuted = Color(0xFFB3C3E6),
+            border = Color(0xFF31497D),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.PASHMINA_ELEGANT -> if (!dark) MeroColors(
+            bg = Color(0xFFFBF6FA),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFF0E3EE),
+            primary = Color(0xFF6A2B5E),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF21121E),
+            textMuted = Color(0xFF624A5D),
+            border = Color(0xFFE0CBE0),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF1D6F42),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF170D15),
+            surface = Color(0xFF261624),
+            surface2 = Color(0xFF382135),
+            primary = Color(0xFFD984CA),
+            onPrimary = Color(0xFF1F0A1B),
+            text = Color(0xFFFCF3FA),
+            textMuted = Color(0xFFD0B4CB),
+            border = Color(0xFF50314B),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
         MeroThemeCatalog.NEWARI_HERITAGE -> if (!dark) MeroColors(
             bg = Color(0xFFFBF6F1),
             surface = Color(0xFFFFFFFF),
@@ -237,6 +398,84 @@ fun tokensFor(catalog: MeroThemeCatalog, dark: Boolean): MeroColors {
             text = Color(0xFFFCF5EE),
             textMuted = Color(0xFFD4B9AC),
             border = Color(0xFF573B2F),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.MINIMAL_NEPALI -> if (!dark) MeroColors(
+            bg = Color(0xFFF8F6F1),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFECE7DC),
+            primary = Color(0xFF3B3630),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF1B1916),
+            textMuted = Color(0xFF5D574F),
+            border = Color(0xFFDAD2C5),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF1E6E3E),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF12110F),
+            surface = Color(0xFF1E1C19),
+            surface2 = Color(0xFF2C2924),
+            primary = Color(0xFFE0D5C1),
+            onPrimary = Color(0xFF1B1916),
+            text = Color(0xFFF7F4EE),
+            textMuted = Color(0xFFC2B9AA),
+            border = Color(0xFF423D36),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.DASHAIN_FESTIVAL -> if (!dark) MeroColors(
+            bg = Color(0xFFFFF6F4),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFF9E4DC),
+            primary = Color(0xFFC21E2B),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF261012),
+            textMuted = Color(0xFF6E4649),
+            border = Color(0xFFEBCBC2),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF237338),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF1C0B0D),
+            surface = Color(0xFF2D1417),
+            surface2 = Color(0xFF421E22),
+            primary = Color(0xFFFF6E79),
+            onPrimary = Color(0xFF240609),
+            text = Color(0xFFFFF3F2),
+            textMuted = Color(0xFFDAB5B8),
+            border = Color(0xFF5E2E33),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF77DC8B),
+            isDark = true
+        )
+
+        MeroThemeCatalog.SOFT_PASTEL_NEPALI -> if (!dark) MeroColors(
+            bg = Color(0xFFFCF7FA),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFF3E8F2),
+            primary = Color(0xFF8A4B76),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF251822),
+            textMuted = Color(0xFF695364),
+            border = Color(0xFFE4D2E1),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF227046),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF171116),
+            surface = Color(0xFF241B23),
+            surface2 = Color(0xFF342733),
+            primary = Color(0xFFE5A4D0),
+            onPrimary = Color(0xFF24111E),
+            text = Color(0xFFFCF5FA),
+            textMuted = Color(0xFFD1B9CB),
+            border = Color(0xFF4C394A),
             danger = Color(0xFFF28B82),
             success = Color(0xFF6DD58C),
             isDark = true
@@ -500,12 +739,48 @@ fun MeroMayaluTheme(
     }
 
     val typography = Typography(
-        titleLarge = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 28.sp),
-        titleMedium = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Medium, fontSize = 18.sp, lineHeight = 24.sp),
-        bodyLarge = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp),
-        bodyMedium = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp),
-        labelMedium = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
-        labelSmall = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp)
+        titleLarge = TextStyle(
+            fontFamily = fontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 22.sp,
+            lineHeight = 28.sp,
+            platformStyle = DevanagariPlatformTextStyle
+        ),
+        titleMedium = TextStyle(
+            fontFamily = fontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 18.sp,
+            lineHeight = 24.sp,
+            platformStyle = DevanagariPlatformTextStyle
+        ),
+        bodyLarge = TextStyle(
+            fontFamily = fontFamily,
+            fontWeight = FontWeight.Normal,
+            fontSize = 15.sp,
+            lineHeight = 22.sp,
+            platformStyle = DevanagariPlatformTextStyle
+        ),
+        bodyMedium = TextStyle(
+            fontFamily = fontFamily,
+            fontWeight = FontWeight.Normal,
+            fontSize = 15.sp,
+            lineHeight = 22.sp,
+            platformStyle = DevanagariPlatformTextStyle
+        ),
+        labelMedium = TextStyle(
+            fontFamily = fontFamily,
+            fontWeight = FontWeight.Normal,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            platformStyle = DevanagariPlatformTextStyle
+        ),
+        labelSmall = TextStyle(
+            fontFamily = fontFamily,
+            fontWeight = FontWeight.Normal,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            platformStyle = DevanagariPlatformTextStyle
+        )
     )
 
     val shapes = Shapes(

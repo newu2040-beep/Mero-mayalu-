@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Celebration
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TempleBuddhist
 import androidx.compose.material3.Icon
@@ -87,6 +88,7 @@ fun CultureScreen(
 
     var placeQuery by rememberSaveable { mutableStateOf("") }
     var icebreakerIdx by rememberSaveable { mutableIntStateOf(0) }
+    var showQuizSheet by rememberSaveable { mutableStateOf(false) }
     val todayAd = remember { LocalDate.now() }
     val todayBs = remember(todayAd) { BikramSambatConverter.fromLocalDate(todayAd) }
     val countdowns = remember(todayAd) { BikramSambatConverter.upcomingFestivalsWithCountdown(todayAd).take(3) }
@@ -139,6 +141,42 @@ fun CultureScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // Interactive Nepali Culture, Language & Moral Values Quiz Game
+            item {
+                MeroCard(modifier = Modifier.widthIn(max = 560.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Quiz,
+                            contentDescription = null,
+                            tint = colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = if (isNe) "नेपाली संस्कृति, भाषा र नैतिक क्विज" else "Nepali Culture, Language & Moral Quiz",
+                            style = MeroType.Heading.copy(color = colors.text),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Text(
+                        text = if (isNe) {
+                            "नेपाल भाषा, तामाङ, लिम्बू, मैथिली, थारु पर्व, सामाजिक परम्परा र नैतिक मूल्यसम्बन्धी रोचक क्विज खेल।"
+                        } else {
+                            "Explore Nepal's languages, greetings, community norms, traditions, and moral values in a quick interactive game."
+                        },
+                        style = MeroType.Body.copy(color = colors.textMuted)
+                    )
+                    MeroButton(
+                        text = s.playQuizCta,
+                        leadingIcon = Icons.Filled.Quiz,
+                        onClick = { showQuizSheet = true },
+                        testTag = "culture_play_quiz_button"
+                    )
                 }
             }
 
@@ -465,5 +503,12 @@ fun CultureScreen(
                 }
             }
         }
+    }
+
+    if (showQuizSheet) {
+        CultureQuizSheet(
+            language = language,
+            onDismiss = { showQuizSheet = false }
+        )
     }
 }
