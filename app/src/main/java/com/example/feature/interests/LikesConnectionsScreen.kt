@@ -2,6 +2,13 @@ package com.example.feature.interests
 
 import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,6 +41,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,6 +68,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.designsystem.LocalMeroColors
 import com.example.core.designsystem.MeroAvatarImage
 import com.example.core.designsystem.MeroButton
@@ -70,6 +79,7 @@ import com.example.core.designsystem.MeroErrorState
 import com.example.core.designsystem.MeroIconButton
 import com.example.core.designsystem.MeroInput
 import com.example.core.designsystem.MeroLoadingState
+import com.example.core.designsystem.MeroPresenceDot
 import com.example.core.designsystem.MeroRadius
 import com.example.core.designsystem.MeroSecondaryButton
 import com.example.core.designsystem.MeroSpacing
@@ -78,9 +88,12 @@ import com.example.core.designsystem.MeroType
 import com.example.core.domain.Conversation
 import com.example.core.domain.InterestRequest
 import com.example.core.domain.InviteCodeRecord
+import com.example.core.domain.PublicProfile
 import com.example.core.domain.UiState
 import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
+import com.example.core.util.LocationServiceHelper
+import kotlinx.coroutines.flow.Flow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +115,8 @@ fun LikesConnectionsScreen(
     onGenerateInviteCode: () -> Unit,
     onRedeemInviteCode: (String, onSuccessDone: () -> Unit) -> Unit,
     onShowToast: (String) -> Unit,
+    observePublicProfile: ((String) -> Flow<PublicProfile?>)? = null,
+    onOpenSearchById: () -> Unit = {},
     bottomPadding: Dp
 ) {
     val colors = LocalMeroColors.current
@@ -118,6 +133,14 @@ fun LikesConnectionsScreen(
         MeroTopBar(
             title = s.navLikes,
             trailingActions = {
+                MeroIconButton(
+                    icon = Icons.Filled.Search,
+                    contentDescription = s.searchByIdTitle,
+                    tint = colors.primary,
+                    containerColor = colors.surface2,
+                    onClick = onOpenSearchById,
+                    testTag = "likes_search_id_button"
+                )
                 MeroIconButton(
                     icon = Icons.Filled.Key,
                     contentDescription = s.secretInviteCodeTitle,
@@ -211,31 +234,44 @@ fun LikesConnectionsScreen(
             )
         }
 
-        when (selectedTab) {
-            0 -> IncomingTabContent(
-                state = incomingState,
-                language = language,
-                isBusy = isBusy,
-                onApprove = onApprove,
-                onDecline = onDecline,
-                onOpenProfileUid = onOpenProfileUid,
-                bottomPadding = bottomPadding
-            )
-            1 -> OutgoingTabContent(
-                state = outgoingState,
-                language = language,
-                isBusy = isBusy,
-                onWithdraw = onWithdraw,
-                onOpenProfileUid = onOpenProfileUid,
-                bottomPadding = bottomPadding
-            )
-            else -> ChatsTabContent(
-                currentUid = currentUid,
-                state = conversationsState,
-                language = language,
-                onOpenChat = onOpenChat,
-                bottomPadding = bottomPadding
-            )
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = {
+                val forward = targetState > initialState
+                (fadeIn(tween(200)) + slideInHorizontally(tween(200)) { w -> if (forward) w / 6 else -w / 6 })
+                    .togetherWith(fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { w -> if (forward) -w / 8 else w / 8 })
+            },
+            label = "likes_tab_transition"
+        ) { tabIdx ->
+            when (tabIdx) {
+                0 -> IncomingTabContent(
+                    state = incomingState,
+                    language = language,
+                    isBusy = isBusy,
+                    observePublicProfile = observePublicProfile,
+                    onApprove = onApprove,
+                    onDecline = onDecline,
+                    onOpenProfileUid = onOpenProfileUid,
+                    bottomPadding = bottomPadding
+                )
+                1 -> OutgoingTabContent(
+                    state = outgoingState,
+                    language = language,
+                    isBusy = isBusy,
+                    observePublicProfile = observePublicProfile,
+                    onWithdraw = onWithdraw,
+                    onOpenProfileUid = onOpenProfileUid,
+                    bottomPadding = bottomPadding
+                )
+                else -> ChatsTabContent(
+                    currentUid = currentUid,
+                    state = conversationsState,
+                    language = language,
+                    observePublicProfile = observePublicProfile,
+                    onOpenChat = onOpenChat,
+                    bottomPadding = bottomPadding
+                )
+            }
         }
     }
 
@@ -483,6 +519,7 @@ private fun IncomingTabContent(
     state: UiState<List<InterestRequest>>,
     language: AppLanguage,
     isBusy: Boolean,
+    observePublicProfile: ((String) -> Flow<PublicProfile?>)?,
     onApprove: (InterestRequest) -> Unit,
     onDecline: (String) -> Unit,
     onOpenProfileUid: (String) -> Unit,
@@ -490,6 +527,7 @@ private fun IncomingTabContent(
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
     when (state) {
         is UiState.Loading -> MeroLoadingState()
         is UiState.Error -> Box(Modifier.padding(MeroSpacing.lg)) {
@@ -517,6 +555,13 @@ private fun IncomingTabContent(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     items(pending, key = { it.id }) { req ->
+                        val peerProfile = remember(req.fromUid, observePublicProfile) {
+                            observePublicProfile?.invoke(req.fromUid)
+                        }?.collectAsStateWithLifecycle(initialValue = null)?.value
+                        val isOnline = LocationServiceHelper.isProfileOnline(peerProfile)
+                        val presenceLabel = if (peerProfile != null) {
+                            LocationServiceHelper.formatPresenceLabel(peerProfile, isNe)
+                        } else ""
                         MeroCard(
                             onClick = { onOpenProfileUid(req.fromUid) },
                             modifier = Modifier
@@ -528,7 +573,16 @@ private fun IncomingTabContent(
                                 horizontalArrangement = Arrangement.spacedBy(MeroSpacing.md),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                MeroAvatarImage(req.fromPhoto, req.fromName, 56.dp)
+                                Box(contentAlignment = Alignment.BottomEnd) {
+                                    MeroAvatarImage(req.fromPhoto, req.fromName, 56.dp)
+                                    if (peerProfile != null) {
+                                        MeroPresenceDot(
+                                            isOnline = isOnline,
+                                            size = 13.dp,
+                                            borderColor = colors.surface
+                                        )
+                                    }
+                                }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = req.fromName,
@@ -537,8 +591,11 @@ private fun IncomingTabContent(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = req.fromLocation,
-                                        style = MeroType.Caption.copy(color = colors.textMuted),
+                                        text = if (presenceLabel.isNotBlank()) "${req.fromLocation} · $presenceLabel" else req.fromLocation,
+                                        style = MeroType.Caption.copy(
+                                            color = if (isOnline) colors.success else colors.textMuted,
+                                            fontWeight = if (isOnline) FontWeight.Medium else FontWeight.Normal
+                                        ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -579,12 +636,14 @@ private fun OutgoingTabContent(
     state: UiState<List<InterestRequest>>,
     language: AppLanguage,
     isBusy: Boolean,
+    observePublicProfile: ((String) -> Flow<PublicProfile?>)?,
     onWithdraw: (String) -> Unit,
     onOpenProfileUid: (String) -> Unit,
     bottomPadding: Dp
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
     when (state) {
         is UiState.Loading -> MeroLoadingState()
         is UiState.Error -> Box(Modifier.padding(MeroSpacing.lg)) {
@@ -612,6 +671,13 @@ private fun OutgoingTabContent(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     items(itemsList, key = { it.id }) { req ->
+                        val peerProfile = remember(req.toUid, observePublicProfile) {
+                            observePublicProfile?.invoke(req.toUid)
+                        }?.collectAsStateWithLifecycle(initialValue = null)?.value
+                        val isOnline = LocationServiceHelper.isProfileOnline(peerProfile)
+                        val presenceLabel = if (peerProfile != null) {
+                            LocationServiceHelper.formatPresenceLabel(peerProfile, isNe)
+                        } else ""
                         MeroCard(
                             onClick = { onOpenProfileUid(req.toUid) },
                             modifier = Modifier.widthIn(max = 560.dp)
@@ -621,7 +687,16 @@ private fun OutgoingTabContent(
                                 horizontalArrangement = Arrangement.spacedBy(MeroSpacing.md),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                MeroAvatarImage(req.toPhoto, req.toName, 56.dp)
+                                Box(contentAlignment = Alignment.BottomEnd) {
+                                    MeroAvatarImage(req.toPhoto, req.toName, 56.dp)
+                                    if (peerProfile != null) {
+                                        MeroPresenceDot(
+                                            isOnline = isOnline,
+                                            size = 13.dp,
+                                            borderColor = colors.surface
+                                        )
+                                    }
+                                }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = req.toName,
@@ -630,9 +705,13 @@ private fun OutgoingTabContent(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = "${req.toLocation} · ${req.status}",
+                                        text = listOfNotNull(
+                                            req.toLocation.takeIf { it.isNotBlank() },
+                                            req.status,
+                                            presenceLabel.takeIf { it.isNotBlank() }
+                                        ).joinToString(" · "),
                                         style = MeroType.Caption.copy(
-                                            color = if (req.status == "PENDING") colors.primary else colors.textMuted
+                                            color = if (isOnline) colors.success else if (req.status == "PENDING") colors.primary else colors.textMuted
                                         ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -665,11 +744,13 @@ private fun ChatsTabContent(
     currentUid: String,
     state: UiState<List<Conversation>>,
     language: AppLanguage,
+    observePublicProfile: ((String) -> Flow<PublicProfile?>)?,
     onOpenChat: (String) -> Unit,
     bottomPadding: Dp
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
     when (state) {
         is UiState.Loading -> MeroLoadingState()
         is UiState.Error -> Box(Modifier.padding(MeroSpacing.lg)) {
@@ -698,8 +779,16 @@ private fun ChatsTabContent(
                 ) {
                     items(chats, key = { it.id }) { conv ->
                         val isA = conv.userAId == currentUid
+                        val partnerUid = if (isA) conv.userBId else conv.userAId
                         val partnerName = if (isA) conv.userBName else conv.userAName
                         val partnerPhoto = if (isA) conv.userBPhoto else conv.userAPhoto
+                        val peerProfile = remember(partnerUid, observePublicProfile) {
+                            if (partnerUid.isNotBlank()) observePublicProfile?.invoke(partnerUid) else null
+                        }?.collectAsStateWithLifecycle(initialValue = null)?.value
+                        val isOnline = LocationServiceHelper.isProfileOnline(peerProfile)
+                        val presenceLabel = if (peerProfile != null) {
+                            LocationServiceHelper.formatPresenceLabel(peerProfile, isNe)
+                        } else ""
                         MeroCard(
                             onClick = { onOpenChat(conv.id) },
                             modifier = Modifier
@@ -711,7 +800,17 @@ private fun ChatsTabContent(
                                 horizontalArrangement = Arrangement.spacedBy(MeroSpacing.md),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                MeroAvatarImage(partnerPhoto, partnerName, 52.dp)
+                                Box(contentAlignment = Alignment.BottomEnd) {
+                                    MeroAvatarImage(partnerPhoto, partnerName, 52.dp)
+                                    if (peerProfile != null) {
+                                        MeroPresenceDot(
+                                            isOnline = isOnline,
+                                            size = 13.dp,
+                                            borderColor = colors.surface,
+                                            modifier = Modifier.testTag("chat_thread_dot_${conv.id}")
+                                        )
+                                    }
+                                }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -728,6 +827,15 @@ private fun ChatsTabContent(
                                             Text(
                                                 text = s.chatMutedBadge,
                                                 style = MeroType.Caption.copy(color = colors.textMuted)
+                                            )
+                                        } else if (presenceLabel.isNotBlank()) {
+                                            Text(
+                                                text = presenceLabel,
+                                                style = MeroType.Caption.copy(
+                                                    color = if (isOnline) colors.success else colors.textMuted,
+                                                    fontWeight = if (isOnline) FontWeight.Bold else FontWeight.Normal
+                                                ),
+                                                maxLines = 1
                                             )
                                         }
                                     }

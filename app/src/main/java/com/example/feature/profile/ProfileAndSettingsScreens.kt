@@ -38,7 +38,9 @@ import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -52,6 +54,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,14 +67,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.example.core.audio.MeroSoundAndHapticHelper
 import com.example.core.designsystem.LocalMeroColors
 import com.example.core.designsystem.MeroAvatarImage
 import com.example.core.designsystem.MeroBannerImage
@@ -83,6 +89,8 @@ import com.example.core.designsystem.MeroInput
 import com.example.core.designsystem.MeroListItem
 import com.example.core.designsystem.MeroLoadingState
 import com.example.core.designsystem.MeroPhotoBox
+import com.example.core.designsystem.MeroPresenceBadge
+import com.example.core.designsystem.MeroPresenceDot
 import com.example.core.designsystem.MeroRadius
 import com.example.core.designsystem.MeroSecondaryButton
 import com.example.core.designsystem.MeroSpacing
@@ -109,11 +117,17 @@ fun ProfileScreen(
     onAddCustomInterest: (String) -> Unit,
     onRemoveInterest: (String) -> Unit,
     onOpenSavedNotes: () -> Unit,
+    onOpenTodos: () -> Unit = {},
     onEditProfile: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenHelpSafety: () -> Unit,
     onOpenAbout: () -> Unit,
     onShowError: (String) -> Unit,
+    currentUid: String = "",
+    showOnlineStatus: Boolean = true,
+    onToggleOnlineStatus: (Boolean) -> Unit = {},
+    hapticEnabled: Boolean = true,
+    onShowToast: (String) -> Unit = {},
     bottomPadding: Dp
 ) {
     val colors = LocalMeroColors.current
@@ -121,6 +135,7 @@ fun ProfileScreen(
     val isNe = language == AppLanguage.NEPALI
     val profile = publicProfile
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
     var showBannerSheet by remember { mutableStateOf(false) }
@@ -438,6 +453,51 @@ fun ProfileScreen(
                             style = MeroType.Caption.copy(color = colors.textMuted)
                         )
                     }
+                    val effectiveOnline = showOnlineStatus && (profile?.onlineNow != false)
+                    MeroPresenceBadge(
+                        isOnline = effectiveOnline,
+                        label = if (effectiveOnline) {
+                            if (isNe) "अनलाइन · सक्रिय" else "Online Now"
+                        } else {
+                            if (isNe) "अफलाइन (गोप्य)" else "Offline (Hidden)"
+                        },
+                        modifier = Modifier.testTag("profile_own_presence_badge")
+                    )
+                    if (currentUid.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(MeroRadius.pill),
+                            color = colors.surface,
+                            border = BorderStroke(1.dp, colors.border),
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 40.dp)
+                                .clip(RoundedCornerShape(MeroRadius.pill))
+                                .clickable {
+                                    MeroSoundAndHapticHelper.triggerHaptic(context, enabled = hapticEnabled)
+                                    clipboard.setText(AnnotatedString(currentUid))
+                                    onShowToast(
+                                        if (isNe) "तपाईंको प्रयोगकर्ता ID कपी गरियो!" else "Copied your User ID!"
+                                    )
+                                }
+                                .testTag("profile_copy_uid_pill")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+                                modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                            ) {
+                                Text(
+                                    text = "${s.myUserIdLabel}: ${currentUid.take(12)}…",
+                                    style = MeroType.Caption.copy(color = colors.textMuted, fontWeight = FontWeight.Medium)
+                                )
+                                Icon(
+                                    imageVector = Icons.Filled.ContentCopy,
+                                    contentDescription = s.myUserIdLabel,
+                                    tint = colors.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -556,6 +616,30 @@ fun ProfileScreen(
                     .padding(horizontal = MeroSpacing.lg)
                     .widthIn(max = 560.dp)
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .padding(horizontal = MeroSpacing.xs)
+                ) {
+                    Text(
+                        text = s.showOnlineStatusToggle,
+                        style = MeroType.Body.copy(color = colors.text, fontWeight = FontWeight.Medium),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = MeroSpacing.sm)
+                    )
+                    Switch(
+                        checked = showOnlineStatus,
+                        onCheckedChange = { enabled ->
+                            MeroSoundAndHapticHelper.triggerHaptic(context, enabled = hapticEnabled)
+                            onToggleOnlineStatus(enabled)
+                        },
+                        modifier = Modifier.testTag("profile_online_status_switch")
+                    )
+                }
                 MeroListItem(
                     title = if (isNe) "प्रोफाइल फोटो थप्नुहोस् / बदल्नुहोस् / हटाउनुहोस्" else "Profile Photo (Add, Change, or Remove)",
                     subtitle = if (profile?.photoDataList.isNullOrEmpty()) {
@@ -576,6 +660,13 @@ fun ProfileScreen(
                     leadingIcon = Icons.Filled.BookmarkAdd,
                     onClick = onOpenSavedNotes,
                     testTag = "profile_saved_notes_row"
+                )
+                MeroListItem(
+                    title = s.todosTab,
+                    subtitle = if (isNe) "भेटघाट तयारी र व्यक्तिगत कार्यहरू" else "Meetup prep & personal checklist",
+                    leadingIcon = Icons.Filled.CheckCircle,
+                    onClick = onOpenTodos,
+                    testTag = "profile_todos_row"
                 )
                 MeroListItem(
                     title = s.editProfile,

@@ -1,14 +1,19 @@
 package com.example
 
+import com.example.core.audio.MeroRingtoneCatalog
 import com.example.core.designsystem.MeroFontCatalog
 import com.example.core.designsystem.MeroThemeCatalog
 import com.example.core.domain.SavedNote
+import com.example.core.firebase.MapsGroundingService
+import com.example.core.localization.AppStrings
 import com.example.core.util.BikramSambatConverter
 import com.example.core.util.DataExportHelper
 import com.example.core.util.ExportUserData
+import com.example.feature.chat.ChatLinkHelper
 import com.example.feature.culture.NepaliCultureQuizBank
 import com.example.feature.culture.QuizCategory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,9 +41,11 @@ class ExampleUnitTest {
 
     @Test
     fun themeAndFontCatalogs_haveExpectedCounts() {
-        assertEquals(17, MeroThemeCatalog.entries.size)
-        assertEquals(11, MeroFontCatalog.entries.size)
+        assertEquals(20, MeroThemeCatalog.entries.size)
+        assertEquals(22, MeroFontCatalog.entries.size)
         assertTrue(MeroFontCatalog.entries.any { it == MeroFontCatalog.SYSTEM })
+        assertTrue(MeroFontCatalog.entries.any { it == MeroFontCatalog.KURALE })
+        assertTrue(MeroThemeCatalog.entries.any { it == MeroThemeCatalog.ANNAPURNA_AURORA })
     }
 
     @Test
@@ -96,5 +103,92 @@ class ExampleUnitTest {
         assertTrue(qs.any { it.category == QuizCategory.LANGUAGES })
         assertTrue(qs.any { it.category == QuizCategory.NORMS })
         assertTrue(qs.any { it.category == QuizCategory.VALUES })
+    }
+
+    @Test
+    fun locationServiceHelper_privacyGridAndCompatibilityWorkCorrectly() {
+        val roundedLat = com.example.core.util.LocationServiceHelper.roundToCoarsePrivacyGrid(27.717245)
+        val roundedLng = com.example.core.util.LocationServiceHelper.roundToCoarsePrivacyGrid(85.323987)
+        assertEquals(27.72, roundedLat, 0.001)
+        assertEquals(85.32, roundedLng, 0.001)
+
+        val me = com.example.core.domain.PublicProfile(
+            uid = "u1",
+            displayName = "Rohan",
+            district = "Kathmandu",
+            province = "Bagmati",
+            interests = listOf("Chiya", "Music", "Travel"),
+            favoriteActivities = listOf("chiya_walk", "momo_tasting"),
+            currentVibeId = "chiya_guff",
+            locationSharingEnabled = true,
+            approxLat = 27.72,
+            approxLng = 85.32
+        )
+        val other = com.example.core.domain.PublicProfile(
+            uid = "u2",
+            displayName = "Srijana",
+            district = "Lalitpur",
+            province = "Bagmati",
+            interests = listOf("Chiya", "Culture", "Music"),
+            favoriteActivities = listOf("chiya_walk"),
+            currentVibeId = "chiya_guff",
+            locationSharingEnabled = true,
+            approxLat = 27.66,
+            approxLng = 85.32
+        )
+        val distKm = com.example.core.util.LocationServiceHelper.estimateDistanceKm(me, other)
+        assertNotNull(distKm)
+        assertTrue(distKm!! in 1..15)
+
+        val comp = com.example.core.util.LocationServiceHelper.computeCompatibility(me, other)
+        assertTrue(comp.totalPercent in 75..98)
+        assertTrue(comp.matchedTags.contains("Chiya"))
+        assertTrue(com.example.core.util.LocationServiceHelper.NEPALI_VIBE_CARDS.isNotEmpty())
+        assertTrue(com.example.core.util.LocationServiceHelper.NEPALI_ACTIVITY_OPTIONS.isNotEmpty())
+        assertTrue(com.example.core.util.LocationServiceHelper.DAILY_QUESTIONS.isNotEmpty())
+        assertTrue(com.example.core.util.LocationServiceHelper.NEPALI_CITIES.any { it.cityEn.equals("Itahari", ignoreCase = true) })
+
+        val onlineUser = me.copy(onlineNow = true)
+        val offlineUser = other.copy(onlineNow = false)
+        assertTrue(com.example.core.util.LocationServiceHelper.isProfileOnline(onlineUser))
+        assertTrue(!com.example.core.util.LocationServiceHelper.isProfileOnline(offlineUser))
+        assertEquals("Online", com.example.core.util.LocationServiceHelper.formatPresenceLabel(onlineUser, isNepali = false))
+        assertEquals("Offline", com.example.core.util.LocationServiceHelper.formatPresenceLabel(offlineUser, isNepali = false))
+    }
+
+    @Test
+    fun v6MaxFeatures_ringtonesLinksQuickRepliesAndInstantHangoutWork() {
+        assertEquals(6, MeroRingtoneCatalog.options.size)
+        assertTrue(MeroRingtoneCatalog.options.any { it.id == MeroRingtoneCatalog.ID_DEVICE_DEFAULT })
+        assertTrue(MeroRingtoneCatalog.options.any { it.id == MeroRingtoneCatalog.ID_CUSTOM })
+
+        val sampleMsg = "Check https://meromayalu.np/plan or www.visitnepal.com and email hi@nepal.org or tel:+9779800000000"
+        val links = ChatLinkHelper.extractLinks(sampleMsg)
+        assertEquals(4, links.size)
+        assertEquals("https://meromayalu.np/plan", links[0].normalizedUri)
+        assertEquals("https://www.visitnepal.com", links[1].normalizedUri)
+        assertEquals("https://nepal.org", links[2].normalizedUri) // verify domain extraction works cleanly
+        assertTrue(links.any { it.normalizedUri == "tel:+9779800000000" })
+
+        val maleSuggestionsEn = ChatLinkHelper.quickRepliesFor("Male", isNepali = false)
+        val femaleSuggestionsNe = ChatLinkHelper.quickRepliesFor("Female", isNepali = true)
+        assertTrue(maleSuggestionsEn.size >= 4)
+        assertTrue(femaleSuggestionsNe.size >= 4)
+        assertFalse(maleSuggestionsEn == ChatLinkHelper.quickRepliesFor("Female", isNepali = false))
+
+        assertTrue(AppStrings.English.disclaimerBody.isNotBlank())
+        assertTrue(AppStrings.Nepali.disclaimerBody.isNotBlank())
+
+        val itinerary = MapsGroundingService().buildInstantHangoutItinerary(
+            city = "Itahari",
+            budgetNpr = 2000,
+            groupSize = 2,
+            durationLabel = "Half Day",
+            preferredActivities = listOf("Chiya & Cafe", "Nature & Park"),
+            isNepali = false,
+            forceFreshVariation = false
+        )
+        assertTrue(itinerary.stops.isNotEmpty())
+        assertTrue(itinerary.city.contains("Itahari", ignoreCase = true))
     }
 }

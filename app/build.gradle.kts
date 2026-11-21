@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.meromayalu.kxpqrm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 6
-    versionName = "5.6"
+    versionCode = 9
+    versionName = "6.0 MAX"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -65,6 +65,16 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  packaging {
+    resources {
+      excludes += setOf(
+        "/META-INF/{AL2.0,LGPL2.1,NOTICE.md,LICENSE*}",
+        "/META-INF/*.version",
+        "/META-INF/com/android/build/gradle/app-metadata.properties",
+        "**/*.proto"
+      )
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

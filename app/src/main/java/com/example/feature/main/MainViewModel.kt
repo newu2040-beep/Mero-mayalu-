@@ -7,17 +7,24 @@ import com.example.core.data.LocalAppPreferences
 import com.example.core.data.MeroMayaluRepository
 import com.example.core.data.PreferencesRepository
 import com.example.core.domain.BlockRecord
+import com.example.core.domain.CallSession
 import com.example.core.domain.ChatMessage
 import com.example.core.domain.Connection
 import com.example.core.domain.Conversation
 import com.example.core.domain.CulturePost
+import com.example.core.domain.HangoutItinerary
 import com.example.core.domain.HeritagePlacesResult
 import com.example.core.domain.InterestRequest
 import com.example.core.domain.InviteCodeRecord
+import com.example.core.domain.MeetupInvitation
 import com.example.core.domain.PollVote
 import com.example.core.domain.PrivateUser
 import com.example.core.domain.PublicProfile
+import com.example.core.domain.SavedHangoutPlan
 import com.example.core.domain.SavedNote
+import com.example.core.domain.SecretCompliment
+import com.example.core.domain.TodoItem
+import com.example.core.domain.TogetherMemory
 import com.example.core.domain.UiState
 import com.example.core.firebase.MapsGroundingService
 import com.example.core.localization.AppLanguage
@@ -26,6 +33,7 @@ import com.example.core.designsystem.MeroThemeCatalog
 import com.example.core.designsystem.MeroThemeMode
 import com.example.core.util.DataExportHelper
 import com.example.core.util.ExportUserData
+import com.example.core.util.LocationServiceHelper
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -124,9 +132,51 @@ class MainViewModel(
         .catch { err -> emit(UiState.Error(extractReadableError(err))) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
 
+    val todoItems: StateFlow<UiState<List<TodoItem>>> = repository.observeTodoItems()
+        .map<List<TodoItem>, UiState<List<TodoItem>>> { UiState.Success(it) }
+        .catch { err -> emit(UiState.Error(extractReadableError(err))) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
+
     val myInviteCode: StateFlow<InviteCodeRecord?> = repository.observeMyInviteCode()
         .catch { err -> Log.w(TAG, "invite code flow error: ${err.message}") }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
+
+    val savedHangoutPlans: StateFlow<List<SavedHangoutPlan>> = repository.observeSavedHangoutPlans()
+        .catch { err -> Log.w(TAG, "saved hangout plans error: ${err.message}") }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val meetupInvites: StateFlow<List<MeetupInvitation>> = repository.observeMeetupInvites()
+        .catch { err -> Log.w(TAG, "meetup invites error: ${err.message}") }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val receivedCompliments: StateFlow<List<SecretCompliment>> = repository.observeReceivedCompliments()
+        .catch { err -> Log.w(TAG, "compliments error: ${err.message}") }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val activeCallSession: StateFlow<CallSession?> = repository.observeCallSessions()
+        .map { list ->
+            val nowSec = System.currentTimeMillis() / 1000L
+            list.firstOrNull { call ->
+                val createdSec = call.createdAt?.seconds ?: nowSec
+                val ageSec = (nowSec - createdSec).coerceAtLeast(0L)
+                when (call.status) {
+                    "RINGING" -> ageSec <= 90L
+                    "ACCEPTED" -> ageSec <= 7200L
+                    else -> false
+                }
+            }
+        }
+        .catch { err -> Log.w(TAG, "call session flow error: ${err.message}") }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
+
+    private val _selectedActivityFilter = MutableStateFlow<String?>(null)
+    val selectedActivityFilter: StateFlow<String?> = _selectedActivityFilter.asStateFlow()
+
+    private val _hangoutPlannerState = MutableStateFlow<UiState<HangoutItinerary>?>(null)
+    val hangoutPlannerState: StateFlow<UiState<HangoutItinerary>?> = _hangoutPlannerState.asStateFlow()
+
+    private val _isHangoutAiEnhancing = MutableStateFlow(false)
+    val isHangoutAiEnhancing: StateFlow<Boolean> = _isHangoutAiEnhancing.asStateFlow()
 
     private val _discoverySubTab = MutableStateFlow(DiscoverySubTab.FOR_YOU)
     val discoverySubTab: StateFlow<DiscoverySubTab> = _discoverySubTab.asStateFlow()
@@ -137,7 +187,8 @@ class MainViewModel(
         _blockedUsers,
         _connections,
         _discoverySubTab,
-        _session
+        _session,
+        _selectedActivityFilter
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val raw = values[0] as UiState<List<PublicProfile>>
@@ -149,6 +200,7 @@ class MainViewModel(
         val conns = values[3] as List<Connection>
         val tab = values[4] as DiscoverySubTab
         val sessionUi = values[5] as MainSessionUi
+        val activityFilter = values[6] as String?
 
         when (raw) {
             is UiState.Loading -> UiState.Loading
@@ -157,24 +209,39 @@ class MainViewModel(
                 val blockedSet = blocked.map { it.blockedUid }.toSet()
                 val connectedSet = conns.flatMap { it.memberUids }.filter { it != currentUserId }.toSet()
                 val myProfile = sessionUi.publicProfile
-                val eligible = raw.data.filter { p ->
+                val eligibleBase = raw.data.filter { p ->
                     p.uid != currentUserId &&
                         p.uid !in dismissed &&
                         p.uid !in blockedSet &&
                         p.uid !in connectedSet
                 }
+                val eligible = if (!activityFilter.isNullOrBlank()) {
+                    val activityMatched = eligibleBase.filter { p ->
+                        activityFilter in p.favoriteActivities ||
+                            p.interests.any { it.contains(activityFilter, ignoreCase = true) }
+                    }
+                    activityMatched.ifEmpty { eligibleBase }
+                } else {
+                    eligibleBase
+                }
                 val ranked = when (tab) {
                     DiscoverySubTab.NEARBY -> {
-                        val sameDistrict = eligible.filter {
+                        val sortedByKm = eligible.sortedBy { candidate ->
+                            LocationServiceHelper.estimateDistanceKm(myProfile, candidate) ?: 999
+                        }
+                        val sameDistrict = sortedByKm.filter {
                             myProfile != null && it.district.equals(myProfile.district, ignoreCase = true)
                         }
-                        if (sameDistrict.isNotEmpty()) sameDistrict else eligible.filter {
-                            myProfile != null && it.province.equals(myProfile.province, ignoreCase = true)
+                        if (sameDistrict.isNotEmpty()) {
+                            sameDistrict + sortedByKm.filterNot { it in sameDistrict }
+                        } else {
+                            sortedByKm
                         }
                     }
                     DiscoverySubTab.FOR_YOU -> {
-                        val myInterests = myProfile?.interests?.toSet().orEmpty()
-                        eligible.sortedByDescending { it.interests.count { tag -> tag in myInterests } }
+                        eligible.sortedByDescending { candidate ->
+                            LocationServiceHelper.computeCompatibility(myProfile, candidate).totalPercent
+                        }
                     }
                     DiscoverySubTab.HERITAGE -> {
                         eligible.sortedByDescending {
@@ -211,6 +278,7 @@ class MainViewModel(
     private var discoveryJob: Job? = null
     private var observedGender: String? = null
     private var toastJob: Job? = null
+    private var hangoutAiJob: Job? = null
 
     init {
         startObservingSession()
@@ -263,6 +331,9 @@ class MainViewModel(
             }
             if (current.reducedMotion != priv.reducedMotion) {
                 prefsRepository.setReducedMotion(priv.reducedMotion)
+            }
+            if (current.showOnlineStatus != priv.showOnlineStatus) {
+                prefsRepository.setShowOnlineStatus(priv.showOnlineStatus)
             }
         }
     }
@@ -581,11 +652,46 @@ class MainViewModel(
         }
     }
 
+    fun setShowOnlineStatus(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setShowOnlineStatus(enabled)
+            if (_session.value.privateUser != null) {
+                runCatching { repository.updatePreferences(mapOf("showOnlineStatus" to enabled)) }
+                    .onFailure { err -> showToast(extractReadableError(err)) }
+            }
+        }
+    }
+
+    fun setHapticFeedbackEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setHapticFeedbackEnabled(enabled)
+        }
+    }
+
+    fun setDailyRemindersEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setDailyRemindersEnabled(enabled)
+        }
+    }
+
+    fun setRingtone(channel: String, ringtoneId: String, customUri: String? = null) {
+        viewModelScope.launch {
+            prefsRepository.setRingtone(channel, ringtoneId, customUri)
+        }
+    }
+
+    fun markDisclaimerAccepted() {
+        viewModelScope.launch {
+            prefsRepository.markDisclaimerAccepted(currentUserId)
+        }
+    }
+
     fun updateBooleanPreference(field: String, value: Boolean) {
         viewModelScope.launch {
             when (field) {
                 "useBikramSambat" -> prefsRepository.setUseBikramSambat(value)
                 "reducedMotion" -> prefsRepository.setReducedMotion(value)
+                "showOnlineStatus" -> prefsRepository.setShowOnlineStatus(value)
             }
             if (_session.value.privateUser != null) {
                 runCatching { repository.updatePreferences(mapOf(field to value)) }
@@ -789,10 +895,76 @@ class MainViewModel(
         }
     }
 
+    fun observePublicProfileFlow(uid: String): Flow<PublicProfile?> =
+        repository.observePublicProfile(uid)
+            .catch { err ->
+                Log.w(TAG, "profile presence observe error for $uid: ${err.message}")
+                emit(null)
+            }
+
+    fun setOnlinePresence(onlineNow: Boolean) {
+        if (_session.value.publicProfile == null) return
+        if (onlineNow && !localPrefs.value.showOnlineStatus) return
+        viewModelScope.launch {
+            repository.updateOnlinePresence(onlineNow)
+        }
+    }
+
+    fun saveOrUpdateTodoItem(
+        existingTodoId: String?,
+        title: String,
+        notes: String,
+        category: String,
+        priority: String,
+        dueDateLabel: String,
+        completed: Boolean = false,
+        successToast: String,
+        onDone: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isActionBusy.value = true
+            runCatching {
+                repository.saveOrUpdateTodoItem(
+                    existingTodoId = existingTodoId,
+                    title = title,
+                    notes = notes,
+                    category = category,
+                    priority = priority,
+                    dueDateLabel = dueDateLabel,
+                    completed = completed
+                )
+            }.onSuccess {
+                showToast(successToast)
+                onDone()
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+            _isActionBusy.value = false
+        }
+    }
+
+    fun toggleTodoCompleted(todoId: String, completed: Boolean) {
+        viewModelScope.launch {
+            runCatching { repository.toggleTodoCompleted(todoId, completed) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
+    fun deleteTodoItem(todoId: String) {
+        viewModelScope.launch {
+            runCatching { repository.deleteTodoItem(todoId) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
     fun searchHeritagePlaces(query: String, isNepali: Boolean) {
         val profile = _session.value.publicProfile
         val cityHint = profile?.district?.takeIf { it.isNotBlank() } ?: "Kathmandu Valley"
-        val coords = coordsForDistrict(cityHint)
+        val coords = if (profile != null && profile.locationSharingEnabled && profile.approxLat != 0.0 && profile.approxLng != 0.0) {
+            profile.approxLat to profile.approxLng
+        } else {
+            coordsForDistrict(cityHint)
+        }
         viewModelScope.launch {
             _culturePlacesState.value = UiState.Loading
             val res = mapsService.discoverNepaliPlaces(
@@ -806,6 +978,300 @@ class MainViewModel(
                 onSuccess = { UiState.Success(it) },
                 onFailure = { UiState.Error(it.localizedMessage ?: "Place search failed.") }
             )
+        }
+    }
+
+    fun setActivityFilter(activityId: String?) {
+        _selectedActivityFilter.value = if (_selectedActivityFilter.value == activityId) null else activityId
+    }
+
+    fun updateLocationAndPrivacy(
+        locationSharingEnabled: Boolean,
+        coarseLat: Double,
+        coarseLng: Double,
+        province: String,
+        district: String,
+        publicLocationLabel: String,
+        successToast: String
+    ) {
+        viewModelScope.launch {
+            _isActionBusy.value = true
+            runCatching {
+                repository.updateLocationAndPrivacy(
+                    locationSharingEnabled = locationSharingEnabled,
+                    coarseLat = coarseLat,
+                    coarseLng = coarseLng,
+                    province = province,
+                    district = district,
+                    publicLocationLabel = publicLocationLabel
+                )
+            }.onSuccess {
+                showToast(successToast)
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+            _isActionBusy.value = false
+        }
+    }
+
+    fun updateVibeActivitiesAndQuestion(
+        currentVibeId: String? = null,
+        favoriteActivities: List<String>? = null,
+        dailyQuestionAnswer: String? = null,
+        successToast: String
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repository.updateVibeActivitiesAndQuestion(
+                    currentVibeId = currentVibeId,
+                    favoriteActivities = favoriteActivities,
+                    dailyQuestionAnswer = dailyQuestionAnswer
+                )
+            }.onSuccess {
+                showToast(successToast)
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+        }
+    }
+
+    fun generateHangoutPlan(
+        city: String,
+        budgetNpr: Int,
+        groupSize: Int,
+        durationLabel: String,
+        preferredActivities: List<String>,
+        isNepali: Boolean,
+        forceFreshVariation: Boolean = false
+    ) {
+        val profile = _session.value.publicProfile
+        val targetCity = city.ifBlank { profile?.district ?: "Kathmandu" }
+        val coords = if (profile != null && profile.locationSharingEnabled && profile.approxLat != 0.0 && profile.approxLng != 0.0) {
+            profile.approxLat to profile.approxLng
+        } else {
+            coordsForDistrict(targetCity)
+        }
+        // Instant sub-10ms local/cached grounded plan so there is zero waiting or spinner lock!
+        val instantPlan = mapsService.buildInstantHangoutItinerary(
+            city = targetCity,
+            budgetNpr = budgetNpr,
+            groupSize = groupSize,
+            durationLabel = durationLabel,
+            preferredActivities = preferredActivities,
+            isNepali = isNepali,
+            forceFreshVariation = forceFreshVariation
+        )
+        _hangoutPlannerState.value = UiState.Success(instantPlan)
+
+        // Optional background Gemini AI enhancement
+        hangoutAiJob?.cancel()
+        hangoutAiJob = viewModelScope.launch {
+            _isHangoutAiEnhancing.value = true
+            runCatching {
+                val aiPlan = mapsService.enhanceItineraryWithGemini(
+                    city = targetCity,
+                    budgetNpr = budgetNpr,
+                    groupSize = groupSize,
+                    durationLabel = durationLabel,
+                    preferredActivities = preferredActivities,
+                    latitude = coords.first,
+                    longitude = coords.second,
+                    isNepali = isNepali
+                )
+                if (aiPlan != null && aiPlan.stops.isNotEmpty()) {
+                    _hangoutPlannerState.value = UiState.Success(aiPlan)
+                }
+            }
+            _isHangoutAiEnhancing.value = false
+        }
+    }
+
+    fun swapHangoutStopWithAlternative(stepNumber: Int) {
+        val current = (_hangoutPlannerState.value as? UiState.Success)?.data ?: return
+        val updatedStops = current.stops.map { stop ->
+            if (stop.stepNumber == stepNumber && stop.backupAlternative.isNotBlank()) {
+                val oldPlace = stop.placeName
+                val newPlace = stop.backupAlternative
+                stop.copy(
+                    placeName = newPlace,
+                    backupAlternative = oldPlace,
+                    mapsUri = "https://www.google.com/maps/search/?api=1&query=${android.net.Uri.encode("$newPlace, ${current.city}, Nepal")}"
+                )
+            } else {
+                stop
+            }
+        }
+        _hangoutPlannerState.value = UiState.Success(current.copy(stops = updatedStops))
+    }
+
+    fun saveCurrentHangoutPlan(itinerary: HangoutItinerary, successToast: String) {
+        viewModelScope.launch {
+            _isActionBusy.value = true
+            runCatching { repository.saveHangoutPlan(itinerary) }
+                .onSuccess { showToast(successToast) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+            _isActionBusy.value = false
+        }
+    }
+
+    fun deleteSavedHangoutPlan(planId: String) {
+        viewModelScope.launch {
+            runCatching { repository.deleteHangoutPlan(planId) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
+    fun sendMeetupInvitation(
+        conversationId: String,
+        recipientUid: String,
+        recipientName: String,
+        planTitle: String,
+        city: String,
+        proposedDateLabel: String,
+        estimatedBudgetNpr: Int,
+        stopsPreview: List<String>,
+        successToast: String
+    ) {
+        val myName = _session.value.publicProfile?.displayName ?: "Member"
+        viewModelScope.launch {
+            runCatching {
+                repository.sendMeetupInvitation(
+                    conversationId = conversationId,
+                    senderName = myName,
+                    recipientUid = recipientUid,
+                    recipientName = recipientName,
+                    planTitle = planTitle,
+                    city = city,
+                    proposedDateLabel = proposedDateLabel,
+                    estimatedBudgetNpr = estimatedBudgetNpr,
+                    stopsPreview = stopsPreview
+                )
+            }.onSuccess {
+                showToast(successToast)
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+        }
+    }
+
+    fun respondToMeetupInvitation(inviteId: String, accepted: Boolean, toastMsg: String) {
+        viewModelScope.launch {
+            runCatching { repository.respondToMeetupInvitation(inviteId, accepted) }
+                .onSuccess { showToast(toastMsg) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
+    fun observeTogetherMemories(conversationId: String): Flow<List<TogetherMemory>> =
+        repository.observeTogetherMemories(conversationId)
+
+    fun addTogetherMemory(
+        conversationId: String,
+        memberUids: List<String>,
+        title: String,
+        noteText: String,
+        imageData: String,
+        milestoneTag: String,
+        successToast: String,
+        onDone: () -> Unit = {}
+    ) {
+        val myName = _session.value.publicProfile?.displayName ?: "Member"
+        viewModelScope.launch {
+            _isActionBusy.value = true
+            runCatching {
+                repository.addTogetherMemory(
+                    conversationId = conversationId,
+                    authorName = myName,
+                    memberUids = memberUids,
+                    title = title,
+                    noteText = noteText,
+                    imageData = imageData,
+                    milestoneTag = milestoneTag
+                )
+            }.onSuccess {
+                showToast(successToast)
+                onDone()
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+            _isActionBusy.value = false
+        }
+    }
+
+    fun deleteTogetherMemory(conversationId: String, memoryId: String) {
+        viewModelScope.launch {
+            runCatching { repository.deleteTogetherMemory(conversationId, memoryId) }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
+    fun sendSecretCompliment(
+        recipientUid: String,
+        complimentKey: String,
+        complimentText: String,
+        successToast: String
+    ) {
+        val myProfile = _session.value.publicProfile ?: return
+        viewModelScope.launch {
+            runCatching {
+                repository.sendSecretCompliment(
+                    senderProfile = myProfile,
+                    recipientUid = recipientUid,
+                    complimentKey = complimentKey,
+                    complimentText = complimentText
+                )
+            }.onSuccess {
+                showToast(successToast)
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+        }
+    }
+
+    fun startAudioCall(
+        conversationId: String,
+        calleeUid: String,
+        calleeName: String,
+        calleePhoto: String
+    ) {
+        val myProfile = _session.value.publicProfile ?: return
+        val existingCall = activeCallSession.value
+        if (existingCall != null && (existingCall.status == "RINGING" || existingCall.status == "ACCEPTED")) {
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                repository.startAudioCall(
+                    conversationId = conversationId,
+                    callerName = myProfile.displayName,
+                    callerPhoto = myProfile.photoDataList.firstOrNull().orEmpty(),
+                    calleeUid = calleeUid,
+                    calleeName = calleeName,
+                    calleePhoto = calleePhoto
+                )
+            }.onFailure { err ->
+                showToast(extractReadableError(err))
+            }
+        }
+    }
+
+    fun acceptIncomingCall(callId: String) {
+        viewModelScope.launch {
+            runCatching { repository.updateCallStatus(callId, "ACCEPTED") }
+                .onFailure { err -> showToast(extractReadableError(err)) }
+        }
+    }
+
+    fun declineOrEndCall(callId: String, newStatus: String = "ENDED") {
+        viewModelScope.launch {
+            runCatching { repository.updateCallStatus(callId, newStatus) }
+                .onFailure { err -> Log.w(TAG, "endCall error: ${err.message}") }
+        }
+    }
+
+    fun transmitCallAudioChunk(callSession: CallSession, base64Chunk: String, seq: Int) {
+        viewModelScope.launch {
+            repository.transmitAcceptedCallAudioChunk(callSession, base64Chunk, seq)
         }
     }
 
@@ -852,14 +1318,42 @@ class MainViewModel(
     suspend fun loadPublicProfile(uid: String): PublicProfile? =
         runCatching { repository.getPublicProfile(uid) }.getOrNull()
 
-    private fun coordsForDistrict(district: String): Pair<Double, Double> = when (district.lowercase()) {
-        "lalitpur" -> 27.6588 to 85.3247
-        "bhaktapur" -> 27.6710 to 85.4298
-        "kaski" -> 28.2096 to 83.9856
-        "chitwan" -> 27.5291 to 84.3542
-        "rupandehi" -> 27.5000 to 83.4500
-        "morang" -> 26.4525 to 87.2718
-        else -> 27.7172 to 85.3240
+    suspend fun searchUserById(rawUid: String, isNepali: Boolean): Result<PublicProfile> {
+        val cleanUid = rawUid.trim()
+        if (cleanUid.length < 6) {
+            return Result.failure(
+                IllegalArgumentException(
+                    if (isNepali) "कृपया मान्य प्रयोगकर्ता ID राख्नुहोस्।" else "Please enter a valid User ID."
+                )
+            )
+        }
+        if (cleanUid == currentUserId) {
+            return Result.failure(
+                IllegalArgumentException(
+                    if (isNepali) "यो तपाईंको आफ्नै प्रयोगकर्ता ID हो।" else "That is your own User ID."
+                )
+            )
+        }
+        val profile = runCatching { repository.getPublicProfile(cleanUid) }.getOrNull()
+            ?: return Result.failure(
+                NoSuchElementException(
+                    if (isNepali) "यो ID सँग मिल्ने सक्रिय प्रोफाइल भेटिएन।" else "No active profile found with that User ID."
+                )
+            )
+        val myGender = _session.value.privateUser?.gender.orEmpty()
+        if (myGender.isNotBlank() && profile.gender.equals(myGender, ignoreCase = true)) {
+            return Result.failure(
+                IllegalStateException(
+                    if (isNepali) "नियम अनुसार विपरीत लिङ्गका सदस्यहरू मात्र खोज्न सकिन्छ।" else "Eligibility policy allows connecting with members of the opposite gender."
+                )
+            )
+        }
+        return Result.success(profile)
+    }
+
+    private fun coordsForDistrict(district: String): Pair<Double, Double> {
+        val city = LocationServiceHelper.cityForDistrictOrName(district)
+        return city.lat to city.lng
     }
 
     private fun extractReadableError(error: Throwable): String {

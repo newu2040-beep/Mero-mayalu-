@@ -46,7 +46,7 @@ service cloud.firestore {
                'uid', 'displayName', 'dateOfBirthPrivate', 'age', 'ageVerified', 'gender',
                'language', 'theme', 'fontStyle', 'themeMode', 'useBikramSambat', 'reducedMotion',
                'discoveryRadiusKm', 'notificationsEnabled', 'discreetNotifications',
-               'quietHoursEnabled', 'visibility', 'activeOutgoingRequestId',
+               'quietHoursEnabled', 'showOnlineStatus', 'visibility', 'activeOutgoingRequestId',
                'moderationStatus', 'acceptedTermsAt', 'createdAt', 'updatedAt'
              ]) &&
              data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
@@ -65,6 +65,7 @@ service cloud.firestore {
              data.notificationsEnabled is bool &&
              data.discreetNotifications is bool &&
              data.quietHoursEnabled is bool &&
+             (!('showOnlineStatus' in data) || data.showOnlineStatus is bool) &&
              (data.visibility == 'visible' || data.visibility == 'paused') &&
              data.activeOutgoingRequestId is string && data.activeOutgoingRequestId.size() <= 128 &&
              (data.moderationStatus == 'active' || data.moderationStatus == 'restricted' || data.moderationStatus == 'suspended') &&
@@ -84,6 +85,9 @@ service cloud.firestore {
                'uid', 'displayName', 'age', 'ageVerified', 'gender', 'bio', 'lookingFor',
                'photoDataList', 'bannerData', 'interests', 'hobbies', 'prompts', 'culturalBadge',
                'province', 'district', 'municipality', 'publicLocationLabel',
+               'locationSharingEnabled', 'approxLat', 'approxLng',
+               'currentVibeId', 'favoriteActivities', 'dailyQuestionAnswer',
+               'onlineNow', 'lastActiveAt',
                'visibility', 'moderationStatus', 'createdAt', 'updatedAt'
              ]) &&
              data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
@@ -104,6 +108,14 @@ service cloud.firestore {
              data.district is string && data.district.size() >= 1 && data.district.size() <= 60 &&
              data.municipality is string && data.municipality.size() <= 60 &&
              data.publicLocationLabel is string && data.publicLocationLabel.size() >= 1 && data.publicLocationLabel.size() <= 80 &&
+             (!('locationSharingEnabled' in data) || data.locationSharingEnabled is bool) &&
+             (!('approxLat' in data) || ((data.approxLat is int || data.approxLat is float) && data.approxLat >= -90 && data.approxLat <= 90)) &&
+             (!('approxLng' in data) || ((data.approxLng is int || data.approxLng is float) && data.approxLng >= -180 && data.approxLng <= 180)) &&
+             (!('currentVibeId' in data) || (data.currentVibeId is string && data.currentVibeId.size() <= 40)) &&
+             (!('favoriteActivities' in data) || (data.favoriteActivities is list && data.favoriteActivities.size() <= 10)) &&
+             (!('dailyQuestionAnswer' in data) || (data.dailyQuestionAnswer is string && data.dailyQuestionAnswer.size() <= 240)) &&
+             (!('onlineNow' in data) || data.onlineNow is bool) &&
+             (!('lastActiveAt' in data) || data.lastActiveAt == null || (data.lastActiveAt is timestamp && data.lastActiveAt <= request.time)) &&
              (data.visibility == 'visible' || data.visibility == 'paused') &&
              (data.moderationStatus == 'active' || data.moderationStatus == 'restricted' || data.moderationStatus == 'suspended') &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
@@ -151,6 +163,50 @@ service cloud.firestore {
              data.sourceAuthorName is string && data.sourceAuthorName.size() <= 60 &&
              data.sourceExcerpt is string && data.sourceExcerpt.size() <= 300 &&
              data.imageData is string && data.imageData.size() <= 700000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSavedHangoutPlan(data) {
+      return data.keys().hasAll([
+               'title', 'city', 'startingLocation', 'durationLabel', 'groupSize',
+               'totalBudgetNpr', 'summaryNotes', 'stopsSummary', 'avoidSummary',
+               'safetySummary', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'title', 'city', 'startingLocation', 'durationLabel', 'groupSize',
+               'totalBudgetNpr', 'summaryNotes', 'stopsSummary', 'avoidSummary',
+               'safetySummary', 'createdAt', 'updatedAt'
+             ]) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 60 &&
+             data.startingLocation is string && data.startingLocation.size() <= 120 &&
+             data.durationLabel is string && data.durationLabel.size() <= 60 &&
+             data.groupSize is int && data.groupSize >= 1 && data.groupSize <= 20 &&
+             data.totalBudgetNpr is int && data.totalBudgetNpr >= 100 && data.totalBudgetNpr <= 200000 &&
+             data.summaryNotes is string && data.summaryNotes.size() <= 1000 &&
+             data.stopsSummary is list && data.stopsSummary.size() <= 10 &&
+             data.avoidSummary is list && data.avoidSummary.size() <= 6 &&
+             data.safetySummary is list && data.safetySummary.size() <= 8 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTodoItem(data) {
+      return data.keys().hasAll([
+               'title', 'notes', 'category', 'priority',
+               'dueDateLabel', 'completed', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'title', 'notes', 'category', 'priority',
+               'dueDateLabel', 'completed', 'createdAt', 'updatedAt'
+             ]) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+             data.notes is string && data.notes.size() <= 600 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
+             (data.priority == 'LOW' || data.priority == 'MEDIUM' || data.priority == 'HIGH') &&
+             data.dueDateLabel is string && data.dueDateLabel.size() <= 60 &&
+             data.completed is bool &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -225,16 +281,109 @@ service cloud.firestore {
              isValidId(data.senderUid) &&
              data.memberUids is list && data.memberUids.size() == 2 &&
              data.memberUids[0] is string && data.memberUids[1] is string &&
-             (data.type == 'TEXT' || data.type == 'IMAGE' || data.type == 'VOICE') &&
+             (data.type == 'TEXT' || data.type == 'IMAGE' || data.type == 'VOICE' || data.type == 'VIDEO') &&
              data.text is string && data.text.size() <= 2000 &&
-             data.mediaData is string && data.mediaData.size() <= 700000 &&
+             data.mediaData is string && data.mediaData.size() <= 750000 &&
              data.audioDurationSec is int && data.audioDurationSec >= 0 && data.audioDurationSec <= 60 &&
              data.waveform is list && data.waveform.size() <= 40 &&
              data.moderationStatus == 'active' &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              ((data.type == 'TEXT' && data.text.size() >= 1) ||
               (data.type == 'IMAGE' && data.mediaData.size() >= 1) ||
-              (data.type == 'VOICE' && data.mediaData.size() >= 1 && data.audioDurationSec >= 1));
+              (data.type == 'VOICE' && data.mediaData.size() >= 1 && data.audioDurationSec >= 1) ||
+              (data.type == 'VIDEO' && data.mediaData.size() >= 1));
+    }
+
+    function isValidTogetherMemory(data) {
+      return data.keys().hasAll([
+               'authorUid', 'authorName', 'memberUids', 'title',
+               'noteText', 'imageData', 'milestoneTag', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'authorUid', 'authorName', 'memberUids', 'title',
+               'noteText', 'imageData', 'milestoneTag', 'createdAt'
+             ]) &&
+             isValidId(data.authorUid) &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             data.memberUids[0] is string && data.memberUids[1] is string &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.noteText is string && data.noteText.size() <= 600 &&
+             data.imageData is string && data.imageData.size() <= 700000 &&
+             data.milestoneTag is string && data.milestoneTag.size() <= 60 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidCallSession(data) {
+      return data.keys().hasAll([
+               'conversationId', 'callerUid', 'callerName', 'callerPhoto',
+               'calleeUid', 'calleeName', 'calleePhoto', 'memberUids',
+               'status', 'callerAudioChunk', 'calleeAudioChunk',
+               'callerSeq', 'calleeSeq', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'conversationId', 'callerUid', 'callerName', 'callerPhoto',
+               'calleeUid', 'calleeName', 'calleePhoto', 'memberUids',
+               'status', 'callerAudioChunk', 'calleeAudioChunk',
+               'callerSeq', 'calleeSeq', 'createdAt', 'updatedAt'
+             ]) &&
+             isValidId(data.conversationId) &&
+             isValidId(data.callerUid) && isValidId(data.calleeUid) && data.callerUid != data.calleeUid &&
+             data.callerName is string && data.callerName.size() <= 60 &&
+             data.callerPhoto is string && data.callerPhoto.size() <= 500000 &&
+             data.calleeName is string && data.calleeName.size() <= 60 &&
+             data.calleePhoto is string && data.calleePhoto.size() <= 500000 &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             (data.callerUid in data.memberUids) && (data.calleeUid in data.memberUids) &&
+             (data.status == 'RINGING' || data.status == 'ACCEPTED' || data.status == 'DECLINED' ||
+              data.status == 'ENDED' || data.status == 'MISSED' || data.status == 'BUSY') &&
+             data.callerAudioChunk is string && data.callerAudioChunk.size() <= 65000 &&
+             data.calleeAudioChunk is string && data.calleeAudioChunk.size() <= 65000 &&
+             data.callerSeq is int && data.callerSeq >= 0 &&
+             data.calleeSeq is int && data.calleeSeq >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMeetupInvitation(data) {
+      return data.keys().hasAll([
+               'conversationId', 'senderUid', 'senderName', 'recipientUid', 'recipientName',
+               'memberUids', 'planTitle', 'city', 'proposedDateLabel',
+               'estimatedBudgetNpr', 'stopsPreview', 'status', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'conversationId', 'senderUid', 'senderName', 'recipientUid', 'recipientName',
+               'memberUids', 'planTitle', 'city', 'proposedDateLabel',
+               'estimatedBudgetNpr', 'stopsPreview', 'status', 'createdAt', 'updatedAt'
+             ]) &&
+             isValidId(data.conversationId) &&
+             isValidId(data.senderUid) && isValidId(data.recipientUid) && data.senderUid != data.recipientUid &&
+             data.senderName is string && data.senderName.size() <= 60 &&
+             data.recipientName is string && data.recipientName.size() <= 60 &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             (data.senderUid in data.memberUids) && (data.recipientUid in data.memberUids) &&
+             data.planTitle is string && data.planTitle.size() >= 1 && data.planTitle.size() <= 120 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 60 &&
+             data.proposedDateLabel is string && data.proposedDateLabel.size() <= 80 &&
+             data.estimatedBudgetNpr is int && data.estimatedBudgetNpr >= 100 && data.estimatedBudgetNpr <= 200000 &&
+             data.stopsPreview is list && data.stopsPreview.size() <= 8 &&
+             (data.status == 'PENDING' || data.status == 'ACCEPTED' || data.status == 'DECLINED') &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCompliment(data) {
+      return data.keys().hasAll([
+               'senderUid', 'senderHint', 'recipientUid', 'complimentKey', 'complimentText', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'senderUid', 'senderHint', 'recipientUid', 'complimentKey', 'complimentText', 'createdAt'
+             ]) &&
+             isValidId(data.senderUid) && isValidId(data.recipientUid) && data.senderUid != data.recipientUid &&
+             data.senderHint is string && data.senderHint.size() <= 80 &&
+             data.complimentKey is string && data.complimentKey.size() <= 40 &&
+             data.complimentText is string && data.complimentText.size() >= 2 && data.complimentText.size() <= 300 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
     function isValidBlock(data) {
@@ -303,7 +452,7 @@ service cloud.firestore {
                           incoming().diff(existing()).affectedKeys().hasOnly([
                             'displayName', 'language', 'theme', 'fontStyle', 'themeMode', 'useBikramSambat',
                             'reducedMotion', 'discoveryRadiusKm', 'notificationsEnabled',
-                            'discreetNotifications', 'quietHoursEnabled', 'visibility', 'updatedAt'
+                            'discreetNotifications', 'quietHoursEnabled', 'showOnlineStatus', 'visibility', 'updatedAt'
                           ])) ||
                          // Action B: Setting activeOutgoingRequestId atomically when creating a new PENDING request
                          (existing().activeOutgoingRequestId == '' &&
@@ -347,6 +496,27 @@ service cloud.firestore {
                          ]);
         allow delete: if isSignedIn() && request.auth.uid == uid && isValidId(noteId);
       }
+
+      match /hangoutPlans/{planId} {
+        allow get, list: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn() && request.auth.uid == uid && isValidId(planId) &&
+                         isValidSavedHangoutPlan(incoming());
+        allow delete: if isSignedIn() && request.auth.uid == uid && isValidId(planId);
+      }
+
+      match /todos/{todoId} {
+        allow get, list: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn() && request.auth.uid == uid && isValidId(todoId) &&
+                         isValidTodoItem(incoming());
+        allow update: if isSignedIn() && request.auth.uid == uid && isValidId(todoId) &&
+                         isValidTodoItem(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'title', 'notes', 'category', 'priority',
+                           'dueDateLabel', 'completed', 'updatedAt'
+                         ]);
+        allow delete: if isSignedIn() && request.auth.uid == uid && isValidId(todoId);
+      }
     }
 
     // 2. Public Discovery Profiles (strictly non-PII)
@@ -387,7 +557,9 @@ service cloud.firestore {
                        incoming().diff(existing()).affectedKeys().hasOnly([
                          'displayName', 'bio', 'lookingFor', 'photoDataList', 'bannerData', 'interests',
                          'hobbies', 'prompts', 'culturalBadge', 'province', 'district',
-                         'municipality', 'publicLocationLabel', 'visibility', 'updatedAt'
+                         'municipality', 'publicLocationLabel', 'locationSharingEnabled',
+                         'approxLat', 'approxLng', 'currentVibeId', 'favoriteActivities',
+                         'dailyQuestionAnswer', 'onlineNow', 'lastActiveAt', 'visibility', 'updatedAt'
                        ]);
 
       allow delete: if isSignedIn() && isValidId(uid) && request.auth.uid == uid;
@@ -477,7 +649,7 @@ service cloud.firestore {
                        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
     }
 
-    // 5. Conversations & Messages (Mutual-Consent Only)
+    // 5. Conversations, Messages & Together Memories (Mutual-Consent Only)
     match /conversations/{conversationId} {
       allow get: if isSignedIn() && isValidId(conversationId) && (request.auth.uid in resource.data.memberUids);
       allow list: if isSignedIn() && (request.auth.uid in resource.data.memberUids);
@@ -523,9 +695,97 @@ service cloud.firestore {
                          resource.data.senderUid == request.auth.uid &&
                          (request.auth.uid in resource.data.memberUids);
       }
+
+      match /memories/{memoryId} {
+        allow get, list: if isSignedIn() && (request.auth.uid in resource.data.memberUids);
+        allow create: if isSignedIn() &&
+                         isValidId(conversationId) &&
+                         isValidId(memoryId) &&
+                         isValidTogetherMemory(incoming()) &&
+                         incoming().authorUid == request.auth.uid &&
+                         (request.auth.uid in incoming().memberUids) &&
+                         !isBlockedEitherWay(incoming().memberUids[0], incoming().memberUids[1]);
+        allow delete: if isSignedIn() &&
+                         isValidId(conversationId) &&
+                         isValidId(memoryId) &&
+                         (request.auth.uid in resource.data.memberUids);
+      }
     }
 
-    // 6. Blocks
+    // 6. Mutual-Consent 1-to-1 Audio Call Sessions
+    match /callSessions/{callId} {
+      allow get: if isSignedIn() && isValidId(callId) && (request.auth.uid in resource.data.memberUids);
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.memberUids);
+
+      allow create: if isSignedIn() &&
+                       isValidId(callId) &&
+                       isValidCallSession(incoming()) &&
+                       incoming().callerUid == request.auth.uid &&
+                       incoming().status == 'RINGING' &&
+                       incoming().callerAudioChunk == '' &&
+                       incoming().calleeAudioChunk == '' &&
+                       !isBlockedEitherWay(incoming().callerUid, incoming().calleeUid);
+
+      allow update: if isSignedIn() &&
+                       isValidId(callId) &&
+                       isValidCallSession(incoming()) &&
+                       (request.auth.uid in existing().memberUids) &&
+                       incoming().conversationId == existing().conversationId &&
+                       incoming().callerUid == existing().callerUid &&
+                       incoming().calleeUid == existing().calleeUid &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().createdAt == existing().createdAt &&
+                       !isBlockedEitherWay(existing().callerUid, existing().calleeUid) &&
+                       (
+                         //Callee accepts, declines, or marks busy
+                         (request.auth.uid == existing().calleeUid &&
+                          (incoming().status == 'ACCEPTED' || incoming().status == 'DECLINED' || incoming().status == 'BUSY')) ||
+                         // Either participant ends or marks missed, or transmits audio ONLY when status == ACCEPTED
+                         (incoming().status == 'ENDED' || incoming().status == 'MISSED') ||
+                         (existing().status == 'ACCEPTED' && incoming().status == 'ACCEPTED')
+                       ) &&
+                       // Audio chunks are strictly forbidden unless call status is ACCEPTED
+                       (incoming().status == 'ACCEPTED' ||
+                        (incoming().callerAudioChunk == '' && incoming().calleeAudioChunk == ''));
+
+      allow delete: if isSignedIn() && isValidId(callId) && (request.auth.uid in resource.data.memberUids);
+    }
+
+    // 7. Virtual Meetup Planner Invitations
+    match /meetupInvites/{inviteId} {
+      allow get, list: if isSignedIn() && (request.auth.uid in resource.data.memberUids);
+      allow create: if isSignedIn() &&
+                       isValidId(inviteId) &&
+                       isValidMeetupInvitation(incoming()) &&
+                       incoming().senderUid == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       !isBlockedEitherWay(incoming().senderUid, incoming().recipientUid);
+      allow update: if isSignedIn() &&
+                       isValidId(inviteId) &&
+                       isValidMeetupInvitation(incoming()) &&
+                       (request.auth.uid in existing().memberUids) &&
+                       incoming().senderUid == existing().senderUid &&
+                       incoming().recipientUid == existing().recipientUid &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isSignedIn() && isValidId(inviteId) && (request.auth.uid in resource.data.memberUids);
+    }
+
+    // 8. Secret Compliments
+    match /compliments/{complimentId} {
+      allow get, list: if isSignedIn() &&
+                          (resource.data.recipientUid == request.auth.uid || resource.data.senderUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(complimentId) &&
+                       isValidCompliment(incoming()) &&
+                       incoming().senderUid == request.auth.uid &&
+                       !isBlockedEitherWay(incoming().senderUid, incoming().recipientUid);
+      allow delete: if isSignedIn() && isValidId(complimentId) &&
+                       (resource.data.recipientUid == request.auth.uid || resource.data.senderUid == request.auth.uid);
+    }
+
+    // 9. Blocks
     match /blocks/{blockId} {
       allow get: if isSignedIn() && isValidId(blockId) && resource.data.blockerUid == request.auth.uid;
       allow list: if isSignedIn() && resource.data.blockerUid == request.auth.uid;
@@ -538,7 +798,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(blockId) && resource.data.blockerUid == request.auth.uid;
     }
 
-    // 7. Safety Reports
+    // 10. Safety Reports
     match /reports/{reportId} {
       allow get: if isSignedIn() && isValidId(reportId) && resource.data.reporterUid == request.auth.uid;
       allow list: if isSignedIn() && resource.data.reporterUid == request.auth.uid;
@@ -550,7 +810,7 @@ service cloud.firestore {
                        incoming().status == 'SUBMITTED';
     }
 
-    // 8. Cultural Moments & Thoughts Feed (Center Lotus Hub)
+    // 11. Cultural Moments & Thoughts Feed (Center Lotus Hub)
     match /culturePosts/{postId} {
       allow get: if isSignedIn() && isValidId(postId) &&
                     !isBlockedEitherWay(request.auth.uid, resource.data.authorUid);
@@ -609,7 +869,7 @@ service cloud.firestore {
       }
     }
 
-    // 9. Secret Favorite-Person Invite Codes
+    // 12. Secret Favorite-Person Invite Codes
     match /inviteCodes/{code} {
       allow get: if isSignedIn() &&
                     isValidId(code) &&

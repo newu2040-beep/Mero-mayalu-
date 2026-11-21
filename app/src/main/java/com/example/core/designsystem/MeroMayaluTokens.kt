@@ -101,6 +101,72 @@ val KalamFontFamily = FontFamily(
     Font(R.font.kalam, FontWeight.Bold)
 )
 
+val AmitaFontFamily = FontFamily(
+    Font(R.font.amita, FontWeight.Normal),
+    Font(R.font.amita, FontWeight.Medium),
+    Font(R.font.amita, FontWeight.Bold)
+)
+
+val RozhaOneFontFamily = FontFamily(
+    Font(R.font.rozha_one, FontWeight.Normal),
+    Font(R.font.rozha_one, FontWeight.Medium),
+    Font(R.font.rozha_one, FontWeight.Bold)
+)
+
+val GotuFontFamily = FontFamily(
+    Font(R.font.gotu, FontWeight.Normal),
+    Font(R.font.gotu, FontWeight.Medium),
+    Font(R.font.gotu, FontWeight.Bold)
+)
+
+val TekoFontFamily = FontFamily(
+    Font(R.font.teko, FontWeight.Normal),
+    Font(R.font.teko, FontWeight.Medium),
+    Font(R.font.teko, FontWeight.Bold)
+)
+
+val LailaFontFamily = FontFamily(
+    Font(R.font.laila, FontWeight.Normal),
+    Font(R.font.laila, FontWeight.Medium),
+    Font(R.font.laila, FontWeight.Bold)
+)
+
+val EczarFontFamily = FontFamily(
+    Font(R.font.eczar, FontWeight.Normal),
+    Font(R.font.eczar, FontWeight.Medium),
+    Font(R.font.eczar, FontWeight.Bold)
+)
+
+val KarmaFontFamily = FontFamily(
+    Font(R.font.karma, FontWeight.Normal),
+    Font(R.font.karma, FontWeight.Medium),
+    Font(R.font.karma, FontWeight.Bold)
+)
+
+val PalanquinFontFamily = FontFamily(
+    Font(R.font.palanquin, FontWeight.Normal),
+    Font(R.font.palanquin, FontWeight.Medium),
+    Font(R.font.palanquin, FontWeight.Bold)
+)
+
+val HalantFontFamily = FontFamily(
+    Font(R.font.halant, FontWeight.Normal),
+    Font(R.font.halant, FontWeight.Medium),
+    Font(R.font.halant, FontWeight.Bold)
+)
+
+val MartelFontFamily = FontFamily(
+    Font(R.font.martel, FontWeight.Normal),
+    Font(R.font.martel, FontWeight.Medium),
+    Font(R.font.martel, FontWeight.Bold)
+)
+
+val KuraleFontFamily = FontFamily(
+    Font(R.font.kurale, FontWeight.Normal),
+    Font(R.font.kurale, FontWeight.Medium),
+    Font(R.font.kurale, FontWeight.Bold)
+)
+
 enum class MeroFontCatalog(
     val id: String,
     val labelEn: String,
@@ -117,7 +183,18 @@ enum class MeroFontCatalog(
     KHAND("khand", "Khand Display", "खण्ड (शीर्षक शैली)", KhandFontFamily),
     RAJDHANI("rajdhani", "Rajdhani Geometric", "राजधानी", RajdhaniFontFamily),
     POPPINS("poppins", "Poppins Contemporary", "पपिन्स", PoppinsFontFamily),
-    KALAM("kalam", "Kalam Handwritten", "कलम (हस्तलिखित)", KalamFontFamily);
+    KALAM("kalam", "Kalam Handwritten", "कलम (हस्तलिखित)", KalamFontFamily),
+    AMITA("amita", "Amita Calligraphic", "अमिता (सुन्दर हस्तलेखन)", AmitaFontFamily),
+    ROZHA_ONE("rozha_one", "Rozha One Heritage Serif", "रोझा वन (सम्पदा सेरिफ)", RozhaOneFontFamily),
+    GOTU("gotu", "Gotu Heritage Rounded", "गोटु (कोमल गोलाकार)", GotuFontFamily),
+    TEKO("teko", "Teko Compact Display", "टेको (आधुनिक शीर्षक)", TekoFontFamily),
+    LAILA("laila", "Laila Soft Warmth", "लैला (न्यानो शैली)", LailaFontFamily),
+    ECZAR("eczar", "Eczar Editorial Classic", "एक्जार (साहित्यिक शैली)", EczarFontFamily),
+    KARMA("karma", "Karma Balanced Reader", "कर्म (स्पष्ट पठन शैली)", KarmaFontFamily),
+    PALANQUIN("palanquin", "Palanquin Clean Devanagari", "पालनक्विन (स्वच्छ देवनागरी)", PalanquinFontFamily),
+    HALANT("halant", "Halant Classic Serif", "हलन्त (शास्त्रीय सेरिफ)", HalantFontFamily),
+    MARTEL("martel", "Martel Warm Reader", "मार्टेल (सन्तुलित पठन)", MartelFontFamily),
+    KURALE("kurale", "Kurale Artistic Script", "कुराले (कलात्मक देवनागरी)", KuraleFontFamily);
 
     companion object {
         fun fromId(id: String): MeroFontCatalog =
@@ -208,7 +285,10 @@ enum class MeroThemeCatalog(val id: String, val labelEn: String, val labelNe: St
     PATAN_EVENING("patan_evening", "Patan Evening", "पाटन साँझ"),
     POKHARA_PHEWA("pokhara_phewa", "Pokhara Phewa Lake", "फेवा ताल"),
     MUSTANG_CANYON("mustang_canyon", "Mustang Canyon", "मुस्ताङ घाटी"),
-    ILAM_TEA("ilam_tea", "Ilam Tea Hills", "इलाम चियाबारी");
+    ILAM_TEA("ilam_tea", "Ilam Tea Hills", "इलाम चियाबारी"),
+    LUMBINI_LOTUS("lumbini_lotus", "Lumbini Golden Lotus", "लुम्बिनी स्वर्ण कमल"),
+    RARA_AZURE("rara_azure", "Rara Alpine Lake", "रारा ताल निलो"),
+    ANNAPURNA_AURORA("annapurna_aurora", "Annapurna Aurora", "अन्नपूर्ण अरुणोदय");
 
     companion object {
         fun fromId(id: String): MeroThemeCatalog =
@@ -684,6 +764,84 @@ fun tokensFor(catalog: MeroThemeCatalog, dark: Boolean): MeroColors {
             text = Color(0xFFF2F9F2),
             textMuted = Color(0xFFB2CEB5),
             border = Color(0xFF355438),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.LUMBINI_LOTUS -> if (!dark) MeroColors(
+            bg = Color(0xFFFDFBF5),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFF5EDDA),
+            primary = Color(0xFF8C5506),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF241B0B),
+            textMuted = Color(0xFF64543A),
+            border = Color(0xFFE6D8BA),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF1D6F42),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF171309),
+            surface = Color(0xFF241D0F),
+            surface2 = Color(0xFF342B18),
+            primary = Color(0xFFEBB852),
+            onPrimary = Color(0xFF211603),
+            text = Color(0xFFFCF7EB),
+            textMuted = Color(0xFFD1C3A5),
+            border = Color(0xFF4B3E23),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.RARA_AZURE -> if (!dark) MeroColors(
+            bg = Color(0xFFF2F8FD),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFDCEBFA),
+            primary = Color(0xFF1358A6),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF0B1C30),
+            textMuted = Color(0xFF3E5978),
+            border = Color(0xFFC1DAEE),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF14754B),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF0A1421),
+            surface = Color(0xFF122236),
+            surface2 = Color(0xFF1C324E),
+            primary = Color(0xFF75B8FF),
+            onPrimary = Color(0xFF05182E),
+            text = Color(0xFFEEF6FF),
+            textMuted = Color(0xFFAAC4E2),
+            border = Color(0xFF2B496E),
+            danger = Color(0xFFF28B82),
+            success = Color(0xFF6DD58C),
+            isDark = true
+        )
+
+        MeroThemeCatalog.ANNAPURNA_AURORA -> if (!dark) MeroColors(
+            bg = Color(0xFFFDF5FA),
+            surface = Color(0xFFFFFFFF),
+            surface2 = Color(0xFFF4E1EE),
+            primary = Color(0xFF93306E),
+            onPrimary = Color(0xFFFFFFFF),
+            text = Color(0xFF26101F),
+            textMuted = Color(0xFF66445A),
+            border = Color(0xFFE7CBE0),
+            danger = Color(0xFFB3261E),
+            success = Color(0xFF1D6F42),
+            isDark = false
+        ) else MeroColors(
+            bg = Color(0xFF190E16),
+            surface = Color(0xFF271723),
+            surface2 = Color(0xFF3A2334),
+            primary = Color(0xFFF092CB),
+            onPrimary = Color(0xFF24091A),
+            text = Color(0xFFFDF2F9),
+            textMuted = Color(0xFFD6B5CA),
+            border = Color(0xFF53334B),
             danger = Color(0xFFF28B82),
             success = Color(0xFF6DD58C),
             isDark = true

@@ -3,20 +3,28 @@ package com.example.core.data
 import android.content.Context
 import com.example.R
 import com.example.core.domain.BlockRecord
+import com.example.core.domain.CallSession
 import com.example.core.domain.ChatMessage
 import com.example.core.domain.Connection
 import com.example.core.domain.Conversation
 import com.example.core.domain.CulturePost
+import com.example.core.domain.HangoutItinerary
 import com.example.core.domain.InterestRequest
 import com.example.core.domain.InviteCodeRecord
+import com.example.core.domain.MeetupInvitation
 import com.example.core.domain.PollVote
 import com.example.core.domain.PostReaction
 import com.example.core.domain.PrivateUser
 import com.example.core.domain.PublicProfile
 import com.example.core.domain.ReportRecord
+import com.example.core.domain.SavedHangoutPlan
 import com.example.core.domain.SavedNote
+import com.example.core.domain.SecretCompliment
+import com.example.core.domain.TodoItem
+import com.example.core.domain.TogetherMemory
 import com.example.core.firebase.OperationType
 import com.example.core.firebase.handleFirestoreError
+import com.example.core.util.LocationServiceHelper
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import java.security.SecureRandom
@@ -124,6 +132,7 @@ class MeroMayaluRepository(
                     "notificationsEnabled" to privateUser.notificationsEnabled,
                     "discreetNotifications" to privateUser.discreetNotifications,
                     "quietHoursEnabled" to privateUser.quietHoursEnabled,
+                    "showOnlineStatus" to privateUser.showOnlineStatus,
                     "visibility" to privateUser.visibility,
                     "activeOutgoingRequestId" to "",
                     "moderationStatus" to "active",
@@ -149,6 +158,8 @@ class MeroMayaluRepository(
                     "district" to publicProfile.district,
                     "municipality" to publicProfile.municipality.trim(),
                     "publicLocationLabel" to publicProfile.publicLocationLabel,
+                    "onlineNow" to true,
+                    "lastActiveAt" to FieldValue.serverTimestamp(),
                     "visibility" to publicProfile.visibility,
                     "moderationStatus" to "active",
                     "createdAt" to FieldValue.serverTimestamp(),
@@ -171,6 +182,7 @@ class MeroMayaluRepository(
                     "notificationsEnabled" to privateUser.notificationsEnabled,
                     "discreetNotifications" to privateUser.discreetNotifications,
                     "quietHoursEnabled" to privateUser.quietHoursEnabled,
+                    "showOnlineStatus" to privateUser.showOnlineStatus,
                     "visibility" to privateUser.visibility,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
@@ -213,13 +225,17 @@ class MeroMayaluRepository(
         try {
             userRef.update(payload).await()
             val visibility = updates["visibility"] as? String
-            if (visibility != null) {
-                db.collection("publicProfiles").document(uid).update(
-                    mapOf(
-                        "visibility" to visibility,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
+            val showOnline = updates["showOnlineStatus"] as? Boolean
+            if (visibility != null || showOnline != null) {
+                val publicPatch = mutableMapOf<String, Any>(
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                if (visibility != null) publicPatch["visibility"] = visibility
+                if (showOnline != null) {
+                    publicPatch["onlineNow"] = showOnline
+                    publicPatch["lastActiveAt"] = FieldValue.serverTimestamp()
+                }
+                db.collection("publicProfiles").document(uid).update(publicPatch).await()
             }
         } catch (e: CancellationException) {
             throw e
@@ -664,6 +680,7 @@ class MeroMayaluRepository(
 
         val previewText = when (type) {
             "IMAGE" -> "📷 Photo"
+            "VIDEO" -> "🎬 Video (${audioDurationSec}s)"
             "VOICE" -> "🎤 Voice note (${audioDurationSec}s)"
             else -> text.trim().take(200)
         }
@@ -719,6 +736,7 @@ class MeroMayaluRepository(
                 val newest = remaining.firstOrNull()
                 val newPreview = when (newest?.type) {
                     "IMAGE" -> "📷 Photo"
+                    "VIDEO" -> "🎬 Video (${newest.audioDurationSec}s)"
                     "VOICE" -> "🎤 Voice note (${newest.audioDurationSec}s)"
                     "TEXT" -> newest.text.trim().take(200)
                     else -> ""
@@ -1069,6 +1087,127 @@ class MeroMayaluRepository(
         }
     }
 
+    // --- ONLINE / OFFLINE ACTIVITY PRESENCE ---
+    suspend fun updateOnlinePresence(onlineNow: Boolean) {
+        val uid = auth.currentUser?.uid ?: return
+        val publicRef = db.collection("publicProfiles").document(uid)
+        runCatching {
+            publicRef.update(
+                mapOf(
+                    "onlineNow" to onlineNow,
+                    "lastActiveAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        }
+    }
+
+    // --- INBUILT TO-DO LIST ---
+    fun observeTodoItems(): Flow<List<TodoItem>> = flow {
+        val uid = requireUserId()
+        val path = "users/$uid/todos"
+        emitAll(
+            db.collection("users").document(uid).collection("todos")
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(TodoItem::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedWith(
+                            compareBy<TodoItem> { it.completed }
+                                .thenByDescending { it.updatedAt ?: it.createdAt ?: Timestamp(0, 0) }
+                        )
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun saveOrUpdateTodoItem(
+        existingTodoId: String?,
+        title: String,
+        notes: String,
+        category: String,
+        priority: String,
+        dueDateLabel: String,
+        completed: Boolean = false
+    ) {
+        val uid = requireUserId()
+        val todoId = existingTodoId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        val ref = db.collection("users").document(uid).collection("todos").document(todoId)
+        val cleanTitle = title.trim().take(140)
+        require(cleanTitle.isNotEmpty()) { "Task title cannot be empty." }
+        val normalizedPriority = when (priority.uppercase()) {
+            "HIGH", "LOW", "MEDIUM" -> priority.uppercase()
+            else -> "MEDIUM"
+        }
+        val cleanCategory = category.trim().take(40).ifBlank { "Personal" }
+        try {
+            if (existingTodoId.isNullOrBlank()) {
+                ref.set(
+                    mapOf(
+                        "title" to cleanTitle,
+                        "notes" to notes.trim().take(600),
+                        "category" to cleanCategory,
+                        "priority" to normalizedPriority,
+                        "dueDateLabel" to dueDateLabel.trim().take(60),
+                        "completed" to completed,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                ref.update(
+                    mapOf(
+                        "title" to cleanTitle,
+                        "notes" to notes.trim().take(600),
+                        "category" to cleanCategory,
+                        "priority" to normalizedPriority,
+                        "dueDateLabel" to dueDateLabel.trim().take(60),
+                        "completed" to completed,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, ref.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun toggleTodoCompleted(todoId: String, completed: Boolean) {
+        val uid = requireUserId()
+        val ref = db.collection("users").document(uid).collection("todos").document(todoId)
+        try {
+            ref.update(
+                mapOf(
+                    "completed" to completed,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun deleteTodoItem(todoId: String) {
+        val uid = requireUserId()
+        val ref = db.collection("users").document(uid).collection("todos").document(todoId)
+        try {
+            ref.delete().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, ref.path, auth)
+            throw e
+        }
+    }
+
     // --- POLL VOTES ---
     fun observePollVotes(postId: String): Flow<List<PollVote>> = flow {
         val uid = requireUserId()
@@ -1190,6 +1329,437 @@ class MeroMayaluRepository(
             }
             throw e
         }
+    }
+
+    // --- REAL-TIME LOCATION & PRIVACY CONTROLS ---
+    suspend fun updateLocationAndPrivacy(
+        locationSharingEnabled: Boolean,
+        coarseLat: Double,
+        coarseLng: Double,
+        province: String,
+        district: String,
+        publicLocationLabel: String
+    ) {
+        val uid = requireUserId()
+        val publicRef = db.collection("publicProfiles").document(uid)
+        val safeLat = if (locationSharingEnabled) LocationServiceHelper.roundToCoarsePrivacyGrid(coarseLat).coerceIn(-90.0, 90.0) else 0.0
+        val safeLng = if (locationSharingEnabled) LocationServiceHelper.roundToCoarsePrivacyGrid(coarseLng).coerceIn(-180.0, 180.0) else 0.0
+        val updates = mapOf(
+            "locationSharingEnabled" to locationSharingEnabled,
+            "approxLat" to safeLat,
+            "approxLng" to safeLng,
+            "province" to province.trim().take(60).ifBlank { "Bagmati" },
+            "district" to district.trim().take(60).ifBlank { "Kathmandu" },
+            "publicLocationLabel" to publicLocationLabel.trim().take(80).ifBlank { "Kathmandu, Nepal" },
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            publicRef.update(updates).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, publicRef.path, auth)
+            throw e
+        }
+    }
+
+    // --- NEPALI VIBE CHECK, NEARBY ACTIVITY MATCH & DAILY QUESTION ---
+    suspend fun updateVibeActivitiesAndQuestion(
+        currentVibeId: String? = null,
+        favoriteActivities: List<String>? = null,
+        dailyQuestionAnswer: String? = null
+    ) {
+        val uid = requireUserId()
+        val publicRef = db.collection("publicProfiles").document(uid)
+        val updates = mutableMapOf<String, Any>(
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (currentVibeId != null) {
+            updates["currentVibeId"] = currentVibeId.trim().take(40)
+        }
+        if (favoriteActivities != null) {
+            updates["favoriteActivities"] = favoriteActivities.map { it.trim().take(40) }.filter { it.isNotBlank() }.distinct().take(10)
+        }
+        if (dailyQuestionAnswer != null) {
+            updates["dailyQuestionAnswer"] = dailyQuestionAnswer.trim().take(240)
+        }
+        try {
+            publicRef.update(updates).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, publicRef.path, auth)
+            throw e
+        }
+    }
+
+    // --- MAYALU AI HANGOUT PLANNER SAVED PLANS ---
+    fun observeSavedHangoutPlans(): Flow<List<SavedHangoutPlan>> = flow {
+        val uid = requireUserId()
+        val path = "users/$uid/hangoutPlans"
+        emitAll(
+            db.collection("users").document(uid).collection("hangoutPlans")
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(SavedHangoutPlan::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun saveHangoutPlan(itinerary: HangoutItinerary) {
+        val uid = requireUserId()
+        val planId = UUID.randomUUID().toString()
+        val ref = db.collection("users").document(uid).collection("hangoutPlans").document(planId)
+        val stopsSummary = itinerary.stops.take(10).map { stop ->
+            "${stop.stepNumber}. ${stop.placeName} (${stop.timeSlot}) - NPR ${stop.estimatedCostNpr} | ${stop.foodSuggestion}"
+                .take(220)
+        }
+        val avoidSummary = itinerary.placesToAvoid.take(6).map { av ->
+            "${av.placeOrArea}: ${av.reason}".take(220)
+        }
+        val safetySummary = itinerary.safetyPrecautions.take(8).map { it.take(200) }
+        val payload = mapOf(
+            "title" to itinerary.title.trim().take(120).ifBlank { "Mayalu Hangout Plan" },
+            "city" to itinerary.city.trim().take(60).ifBlank { "Kathmandu" },
+            "startingLocation" to itinerary.startingLocation.trim().take(120),
+            "durationLabel" to itinerary.durationLabel.trim().take(60),
+            "groupSize" to itinerary.groupSize.coerceIn(1, 20),
+            "totalBudgetNpr" to itinerary.totalEstimatedBudgetNpr.coerceIn(100, 200000),
+            "summaryNotes" to itinerary.weatherAndTimingNote.trim().take(1000),
+            "stopsSummary" to stopsSummary,
+            "avoidSummary" to avoidSummary,
+            "safetySummary" to safetySummary,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            ref.set(payload).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun deleteHangoutPlan(planId: String) {
+        val uid = requireUserId()
+        val ref = db.collection("users").document(uid).collection("hangoutPlans").document(planId)
+        try {
+            ref.delete().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, ref.path, auth)
+            throw e
+        }
+    }
+
+    // --- VIRTUAL MEETUP PLANNER INVITATIONS ---
+    fun observeMeetupInvites(): Flow<List<MeetupInvitation>> = flow {
+        val uid = requireUserId()
+        val path = "meetupInvites"
+        emitAll(
+            db.collection(path)
+                .whereArrayContains("memberUids", uid)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(MeetupInvitation::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun sendMeetupInvitation(
+        conversationId: String,
+        senderName: String,
+        recipientUid: String,
+        recipientName: String,
+        planTitle: String,
+        city: String,
+        proposedDateLabel: String,
+        estimatedBudgetNpr: Int,
+        stopsPreview: List<String>
+    ) {
+        val uid = requireUserId()
+        val inviteId = UUID.randomUUID().toString()
+        val ref = db.collection("meetupInvites").document(inviteId)
+        val members = sortedPair(uid, recipientUid)
+        val payload = mapOf(
+            "conversationId" to conversationId.ifBlank { pairId(uid, recipientUid) },
+            "senderUid" to uid,
+            "senderName" to senderName.trim().take(60).ifBlank { "Member" },
+            "recipientUid" to recipientUid,
+            "recipientName" to recipientName.trim().take(60).ifBlank { "Member" },
+            "memberUids" to members,
+            "planTitle" to planTitle.trim().take(120).ifBlank { "Heritage Meetup" },
+            "city" to city.trim().take(60).ifBlank { "Kathmandu" },
+            "proposedDateLabel" to proposedDateLabel.trim().take(80).ifBlank { "This Saturday Afternoon" },
+            "estimatedBudgetNpr" to estimatedBudgetNpr.coerceIn(100, 200000),
+            "stopsPreview" to stopsPreview.map { it.take(140) }.take(8),
+            "status" to "PENDING",
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            ref.set(payload).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun respondToMeetupInvitation(inviteId: String, accepted: Boolean) {
+        requireUserId()
+        val ref = db.collection("meetupInvites").document(inviteId)
+        try {
+            ref.update(
+                mapOf(
+                    "status" to if (accepted) "ACCEPTED" else "DECLINED",
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    // --- TOGETHER MEMORIES (SHARED ALBUM IN MUTUAL CONNECTIONS) ---
+    fun observeTogetherMemories(conversationId: String): Flow<List<TogetherMemory>> = flow {
+        val uid = requireUserId()
+        val path = "conversations/$conversationId/memories"
+        emitAll(
+            db.collection("conversations").document(conversationId).collection("memories")
+                .whereArrayContains("memberUids", uid)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(TogetherMemory::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun addTogetherMemory(
+        conversationId: String,
+        authorName: String,
+        memberUids: List<String>,
+        title: String,
+        noteText: String,
+        imageData: String = "",
+        milestoneTag: String = "Special Moment"
+    ) {
+        val uid = requireUserId()
+        val memId = UUID.randomUUID().toString()
+        val ref = db.collection("conversations").document(conversationId).collection("memories").document(memId)
+        val payload = mapOf(
+            "authorUid" to uid,
+            "authorName" to authorName.trim().take(60).ifBlank { "Member" },
+            "memberUids" to memberUids,
+            "title" to title.trim().take(100).ifBlank { "Together Memory" },
+            "noteText" to noteText.trim().take(600),
+            "imageData" to imageData,
+            "milestoneTag" to milestoneTag.trim().take(60),
+            "createdAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            ref.set(payload).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun deleteTogetherMemory(conversationId: String, memoryId: String) {
+        requireUserId()
+        val ref = db.collection("conversations").document(conversationId).collection("memories").document(memoryId)
+        try {
+            ref.delete().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, ref.path, auth)
+            throw e
+        }
+    }
+
+    // --- SECRET COMPLIMENTS ---
+    fun observeReceivedCompliments(): Flow<List<SecretCompliment>> = flow {
+        val uid = requireUserId()
+        val path = "compliments"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("recipientUid", uid)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(SecretCompliment::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun sendSecretCompliment(
+        senderProfile: PublicProfile,
+        recipientUid: String,
+        complimentKey: String,
+        complimentText: String
+    ) {
+        val uid = requireUserId()
+        require(recipientUid != uid) { "Cannot send a compliment to yourself." }
+        val compId = UUID.randomUUID().toString()
+        val ref = db.collection("compliments").document(compId)
+        val hint = buildString {
+            append("Someone from ${senderProfile.district}")
+            if (senderProfile.culturalBadge.isNotBlank()) {
+                append(" · ${senderProfile.culturalBadge}")
+            }
+        }.take(80)
+        val payload = mapOf(
+            "senderUid" to uid,
+            "senderHint" to hint,
+            "recipientUid" to recipientUid,
+            "complimentKey" to complimentKey.trim().take(40).ifBlank { "kind_energy" },
+            "complimentText" to complimentText.trim().take(300),
+            "createdAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            ref.set(payload).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    // --- MUTUAL-CONSENT 1-TO-1 AUDIO CALLING ---
+    fun observeCallSessions(): Flow<List<CallSession>> = flow {
+        val uid = requireUserId()
+        val path = "callSessions"
+        emitAll(
+            db.collection(path)
+                .whereArrayContains("memberUids", uid)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(CallSession::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.updatedAt ?: it.createdAt ?: Timestamp(0, 0) }
+                }
+                .catch { error ->
+                    logFlowError(error, OperationType.LIST, path, uid)
+                    throw error
+                }
+        )
+    }
+
+    suspend fun startAudioCall(
+        conversationId: String,
+        callerName: String,
+        callerPhoto: String,
+        calleeUid: String,
+        calleeName: String,
+        calleePhoto: String
+    ): String {
+        val uid = requireUserId()
+        require(calleeUid.isNotBlank() && calleeUid != uid) { "Invalid call recipient." }
+        val callId = UUID.randomUUID().toString()
+        val ref = db.collection("callSessions").document(callId)
+        val members = sortedPair(uid, calleeUid)
+        val payload = mapOf(
+            "conversationId" to conversationId.ifBlank { pairId(uid, calleeUid) },
+            "callerUid" to uid,
+            "callerName" to callerName.trim().take(60).ifBlank { "Member" },
+            "callerPhoto" to callerPhoto,
+            "calleeUid" to calleeUid,
+            "calleeName" to calleeName.trim().take(60).ifBlank { "Member" },
+            "calleePhoto" to calleePhoto,
+            "memberUids" to members,
+            "status" to "RINGING",
+            "callerAudioChunk" to "",
+            "calleeAudioChunk" to "",
+            "callerSeq" to 0,
+            "calleeSeq" to 0,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            ref.set(payload).await()
+            return callId
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun updateCallStatus(callId: String, newStatus: String) {
+        requireUserId()
+        val ref = db.collection("callSessions").document(callId)
+        val updates = mutableMapOf<String, Any>(
+            "status" to newStatus,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (newStatus != "ACCEPTED") {
+            updates["callerAudioChunk"] = ""
+            updates["calleeAudioChunk"] = ""
+        }
+        try {
+            ref.update(updates).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, ref.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun transmitAcceptedCallAudioChunk(
+        callSession: CallSession,
+        base64AudioChunk: String,
+        nextSeq: Int
+    ) {
+        val uid = requireUserId()
+        // CRITICAL MUTUAL-CONSENT GUARD: Audio is NEVER transmitted unless status == ACCEPTED
+        if (callSession.status != "ACCEPTED" || base64AudioChunk.isBlank()) return
+        val ref = db.collection("callSessions").document(callSession.id)
+        val isCaller = callSession.callerUid == uid
+        val updates = if (isCaller) {
+            mapOf(
+                "callerAudioChunk" to base64AudioChunk.take(64000),
+                "callerSeq" to nextSeq,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        } else {
+            mapOf(
+                "calleeAudioChunk" to base64AudioChunk.take(64000),
+                "calleeSeq" to nextSeq,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        }
+        runCatching { ref.update(updates).await() }
     }
 
     private fun logFlowError(

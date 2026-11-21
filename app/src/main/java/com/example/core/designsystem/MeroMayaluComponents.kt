@@ -3,6 +3,8 @@ package com.example.core.designsystem
 import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -59,6 +61,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -387,8 +390,16 @@ fun MeroChip(
     testTag: String = "mero_chip"
 ) {
     val colors = LocalMeroColors.current
-    val bg = if (selected) colors.primary else colors.surface2
-    val fg = if (selected) colors.onPrimary else colors.text
+    val bg by animateColorAsState(
+        targetValue = if (selected) colors.primary else colors.surface2,
+        animationSpec = tween(180),
+        label = "chip_bg"
+    )
+    val fg by animateColorAsState(
+        targetValue = if (selected) colors.onPrimary else colors.text,
+        animationSpec = tween(180),
+        label = "chip_fg"
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
@@ -574,7 +585,11 @@ private fun BottomNavItem(
     badge: Int = 0
 ) {
     val colors = LocalMeroColors.current
-    val fg = if (selected) colors.primary else colors.textMuted
+    val fg by animateColorAsState(
+        targetValue = if (selected) colors.primary else colors.textMuted,
+        animationSpec = tween(180),
+        label = "nav_fg"
+    )
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
@@ -999,6 +1014,74 @@ fun MeroToast(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun MeroPresenceDot(
+    isOnline: Boolean,
+    size: Dp = 10.dp,
+    borderColor: Color = LocalMeroColors.current.surface,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalMeroColors.current
+    val dotColor by animateColorAsState(
+        targetValue = if (isOnline) colors.success else colors.textMuted,
+        animationSpec = tween(200),
+        label = "presence_dot"
+    )
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(dotColor)
+            .border(1.5.dp, borderColor, CircleShape)
+    )
+}
+
+@Composable
+fun MeroPresenceBadge(
+    isOnline: Boolean,
+    label: String,
+    onDarkBackground: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalMeroColors.current
+    val pillBg = when {
+        onDarkBackground -> Color.Black.copy(alpha = 0.52f)
+        isOnline -> colors.success.copy(alpha = 0.14f)
+        else -> colors.surface2
+    }
+    val textColor = when {
+        onDarkBackground -> Color.White
+        isOnline -> colors.success
+        else -> colors.textMuted
+    }
+    Surface(
+        shape = RoundedCornerShape(MeroRadius.pill),
+        color = pillBg,
+        modifier = modifier
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+            modifier = Modifier.padding(horizontal = MeroSpacing.sm, vertical = MeroSpacing.xs)
+        ) {
+            MeroPresenceDot(
+                isOnline = isOnline,
+                size = 8.dp,
+                borderColor = if (onDarkBackground) Color.White.copy(alpha = 0.7f) else colors.surface
+            )
+            Text(
+                text = label,
+                style = MeroType.Caption.copy(
+                    color = textColor,
+                    fontWeight = if (isOnline) FontWeight.Bold else FontWeight.Normal
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

@@ -409,3 +409,169 @@ val Icons.Filled.Verified: ImageVector by lazy {
         lineToRelative(5.85f, -5.87f); lineToRelative(1.48f, 1.48f); lineTo(10.09f, 16.72f); close()
     }
 }
+
+val Icons.Filled.CallEnd: ImageVector by lazy {
+    simpleIcon("Filled.CallEnd") {
+        moveTo(12.0f, 9.0f); curveToRelative(-1.6f, 0.0f, -3.15f, 0.25f, -4.6f, 0.72f); verticalLineToRelative(3.1f)
+        curveToRelative(0.0f, 0.39f, -0.23f, 0.74f, -0.56f, 0.9f); curveToRelative(-0.98f, 0.49f, -1.87f, 1.12f, -2.66f, 1.85f)
+        curveToRelative(-0.18f, 0.18f, -0.43f, 0.28f, -0.7f, 0.28f); curveToRelative(-0.28f, 0.0f, -0.53f, -0.11f, -0.71f, -0.29f)
+        lineTo(0.29f, 13.08f); curveToRelative(-0.18f, -0.17f, -0.29f, -0.42f, -0.29f, -0.7f)
+        curveToRelative(0.0f, -0.28f, 0.11f, -0.53f, 0.29f, -0.71f); curveTo(3.34f, 8.78f, 7.46f, 7.0f, 12.0f, 7.0f)
+        reflectiveCurveToRelative(8.66f, 1.78f, 11.71f, 4.67f); curveToRelative(0.18f, 0.18f, 0.29f, 0.43f, 0.29f, 0.71f)
+        curveToRelative(0.0f, 0.28f, -0.11f, 0.53f, -0.29f, 0.71f); lineToRelative(-2.48f, 2.48f)
+        curveToRelative(-0.18f, 0.18f, -0.43f, 0.29f, -0.71f, 0.29f); curveToRelative(-0.27f, 0.0f, -0.52f, -0.11f, -0.7f, -0.28f)
+        curveToRelative(-0.79f, -0.74f, -1.69f, -1.36f, -2.67f, -1.85f); curveToRelative(-0.33f, -0.16f, -0.56f, -0.5f, -0.56f, -0.9f)
+        verticalLineToRelative(-3.1f); curveTo(15.15f, 9.25f, 13.6f, 9.0f, 12.0f, 9.0f); close()
+    }
+}
+
+val Icons.Filled.MicOff: ImageVector by lazy {
+    simpleIcon("Filled.MicOff") {
+        moveTo(19.0f, 11.0f); horizontalLineToRelative(-1.7f); curveToRelative(0.0f, 0.74f, -0.16f, 1.43f, -0.43f, 2.05f)
+        lineToRelative(1.23f, 1.23f); curveToRelative(0.56f, -0.98f, 0.9f, -2.09f, 0.9f, -3.28f); close()
+        moveTo(14.98f, 11.17f); curveToRelative(0.0f, -0.06f, 0.02f, -0.11f, 0.02f, -0.17f); verticalLineTo(5.0f)
+        curveToRelative(0.0f, -1.66f, -1.34f, -3.0f, -3.0f, -3.0f); reflectiveCurveTo(9.0f, 3.34f, 9.0f, 5.0f)
+        verticalLineToRelative(0.18f); lineToRelative(5.98f, 5.99f); close()
+        moveTo(4.27f, 3.0f); lineTo(3.0f, 4.27f); lineToRelative(6.01f, 6.01f); verticalLineTo(11.0f)
+        curveToRelative(0.0f, 1.66f, 1.33f, 3.0f, 2.99f, 3.0f); curveToRelative(0.22f, 0.0f, 0.44f, -0.03f, 0.65f, -0.08f)
+        lineToRelative(1.66f, 1.66f); curveToRelative(-0.71f, 0.33f, -1.5f, 0.52f, -2.31f, 0.52f)
+        curveToRelative(-2.76f, 0.0f, -5.3f, -2.1f, -5.3f, -5.1f); horizontalLineTo(5.0f)
+        curveToRelative(0.0f, 3.41f, 2.72f, 6.23f, 6.0f, 6.72f); verticalLineTo(21.0f); horizontalLineToRelative(2.0f)
+        verticalLineToRelative(-3.28f); curveToRelative(0.91f, -0.13f, 1.77f, -0.45f, 2.54f, -0.9f)
+        lineTo(19.73f, 21.0f); lineTo(21.0f, 19.73f); lineTo(4.27f, 3.0f); close()
+    }
+}
+
+val Icons.Filled.VolumeUp: ImageVector by lazy {
+    simpleIcon("Filled.VolumeUp") {
+        moveTo(3.0f, 9.0f); verticalLineToRelative(6.0f); horizontalLineToRelative(4.0f); lineToRelative(5.0f, 5.0f)
+        verticalLineTo(4.0f); lineTo(7.0f, 9.0f); horizontalLineTo(3.0f); close()
+        moveTo(16.5f, 12.0f); curveToRelative(0.0f, -1.77f, -1.02f, -3.29f, -2.5f, -4.03f)
+        verticalLineToRelative(8.05f); curveToRelative(1.48f, -0.73f, 2.5f, -2.25f, 2.5f, -4.02f); close()
+        moveTo(14.0f, 3.23f); verticalLineToRelative(2.06f); curveToRelative(2.89f, 0.86f, 5.0f, 3.54f, 5.0f, 6.71f)
+        reflectiveCurveToRelative(-2.11f, 5.85f, -5.0f, 6.71f); verticalLineToRelative(2.06f)
+        curveToRelative(4.01f, -0.91f, 7.0f, -4.49f, 7.0f, -8.77f); reflectiveCurveToRelative(-2.99f, -7.86f, -7.0f, -8.77f); close()
+    }
+}
+
+val Icons.Filled.Map: ImageVector by lazy {
+    simpleIcon("Filled.Map") {
+        moveTo(20.5f, 3.0f); lineToRelative(-0.16f, 0.03f); lineTo(15.0f, 5.1f); lineTo(9.0f, 3.0f)
+        lineTo(3.36f, 4.9f); curveToRelative(-0.21f, 0.07f, -0.36f, 0.25f, -0.36f, 0.48f); verticalLineTo(20.5f)
+        curveToRelative(0.0f, 0.28f, 0.22f, 0.5f, 0.5f, 0.5f); lineToRelative(0.16f, -0.03f); lineTo(9.0f, 18.9f)
+        lineToRelative(6.0f, 2.1f); lineToRelative(5.64f, -1.9f); curveToRelative(0.21f, -0.07f, 0.36f, -0.25f, 0.36f, -0.48f)
+        verticalLineTo(3.5f); curveToRelative(0.0f, -0.28f, -0.22f, -0.5f, -0.5f, -0.5f); close()
+        moveTo(15.0f, 19.0f); lineToRelative(-6.0f, -2.11f); verticalLineTo(5.0f); lineToRelative(6.0f, 2.11f); verticalLineTo(19.0f); close()
+    }
+}
+
+val Icons.Filled.Mood: ImageVector by lazy {
+    simpleIcon("Filled.Mood") {
+        moveTo(11.99f, 2.0f); curveTo(6.47f, 2.0f, 2.0f, 6.48f, 2.0f, 12.0f); reflectiveCurveToRelative(4.47f, 10.0f, 9.99f, 10.0f)
+        curveTo(17.52f, 22.0f, 22.0f, 17.52f, 22.0f, 12.0f); reflectiveCurveTo(17.52f, 2.0f, 11.99f, 2.0f); close()
+        moveTo(12.0f, 20.0f); curveToRelative(-4.42f, 0.0f, -8.0f, -3.58f, -8.0f, -8.0f)
+        reflectiveCurveToRelative(3.58f, -8.0f, 8.0f, -8.0f); reflectiveCurveToRelative(8.0f, 3.58f, 8.0f, 8.0f)
+        reflectiveCurveToRelative(-3.58f, 8.0f, -8.0f, 8.0f); close()
+        moveTo(15.5f, 11.0f); curveToRelative(0.83f, 0.0f, 1.5f, -0.67f, 1.5f, -1.5f); reflectiveCurveTo(16.33f, 8.0f, 15.5f, 8.0f)
+        reflectiveCurveTo(14.0f, 8.67f, 14.0f, 9.5f); reflectiveCurveToRelative(0.67f, 1.5f, 1.5f, 1.5f); close()
+        moveTo(8.5f, 11.0f); curveToRelative(0.83f, 0.0f, 1.5f, -0.67f, 1.5f, -1.5f); reflectiveCurveTo(9.33f, 8.0f, 8.5f, 8.0f)
+        reflectiveCurveTo(7.0f, 8.67f, 7.0f, 9.5f); reflectiveCurveTo(7.67f, 11.0f, 8.5f, 11.0f); close()
+        moveTo(12.0f, 17.5f); curveToRelative(2.33f, 0.0f, 4.31f, -1.46f, 5.11f, -3.5f); horizontalLineTo(6.89f)
+        curveToRelative(0.8f, 2.04f, 2.78f, 3.5f, 5.11f, 3.5f); close()
+    }
+}
+
+val Icons.Filled.SwapHoriz: ImageVector by lazy {
+    simpleIcon("Filled.SwapHoriz") {
+        moveTo(6.99f, 11.0f); lineTo(3.0f, 15.0f); lineToRelative(3.99f, 4.0f); verticalLineToRelative(-3.0f)
+        horizontalLineTo(14.0f); verticalLineToRelative(-2.0f); horizontalLineTo(6.99f); verticalLineToRelative(-3.0f); close()
+        moveTo(21.0f, 9.0f); lineToRelative(-3.99f, -4.0f); verticalLineToRelative(3.0f); horizontalLineTo(10.0f)
+        verticalLineToRelative(2.0f); horizontalLineToRelative(7.01f); verticalLineToRelative(3.0f); lineTo(21.0f, 9.0f); close()
+    }
+}
+
+val Icons.Filled.Collections: ImageVector by lazy {
+    simpleIcon("Filled.Collections") {
+        moveTo(22.0f, 16.0f); verticalLineTo(4.0f); curveToRelative(0.0f, -1.1f, -0.9f, -2.0f, -2.0f, -2.0f)
+        horizontalLineTo(8.0f); curveToRelative(-1.1f, 0.0f, -2.0f, 0.9f, -2.0f, 2.0f); verticalLineToRelative(12.0f)
+        curveToRelative(0.0f, 1.1f, 0.9f, 2.0f, 2.0f, 2.0f); horizontalLineToRelative(12.0f); curveToRelative(1.1f, 0.0f, 2.0f, -0.9f, 2.0f, -2.0f); close()
+        moveTo(11.0f, 12.0f); lineToRelative(2.03f, 2.71f); lineTo(16.0f, 11.0f); lineToRelative(4.0f, 5.0f)
+        horizontalLineTo(8.0f); lineToRelative(3.0f, -4.0f); close()
+        moveTo(2.0f, 6.0f); verticalLineToRelative(14.0f); curveToRelative(0.0f, 1.1f, 0.9f, 2.0f, 2.0f, 2.0f)
+        horizontalLineToRelative(14.0f); verticalLineToRelative(-2.0f); horizontalLineTo(4.0f); verticalLineTo(6.0f); horizontalLineTo(2.0f); close()
+    }
+}
+
+val Icons.Filled.Search: ImageVector by lazy {
+    simpleIcon("Filled.Search") {
+        moveTo(15.5f, 14.0f); horizontalLineToRelative(-0.79f); lineToRelative(-0.28f, -0.27f)
+        curveTo(15.41f, 12.59f, 16.0f, 11.11f, 16.0f, 9.5f)
+        curveTo(16.0f, 5.91f, 13.09f, 3.0f, 9.5f, 3.0f)
+        reflectiveCurveTo(3.0f, 5.91f, 3.0f, 9.5f); reflectiveCurveTo(5.91f, 16.0f, 9.5f, 16.0f)
+        curveToRelative(1.61f, 0.0f, 3.09f, -0.59f, 4.23f, -1.57f); lineToRelative(0.27f, 0.28f); verticalLineToRelative(0.79f)
+        lineToRelative(5.0f, 4.99f); lineTo(20.49f, 19.0f); lineToRelative(-4.99f, -5.0f); close()
+        moveTo(9.5f, 14.0f); curveTo(7.01f, 14.0f, 5.0f, 11.99f, 5.0f, 9.5f)
+        reflectiveCurveTo(7.01f, 5.0f, 9.5f, 5.0f); reflectiveCurveTo(14.0f, 7.01f, 14.0f, 9.5f)
+        reflectiveCurveTo(11.99f, 14.0f, 9.5f, 14.0f); close()
+    }
+}
+
+val Icons.Filled.Link: ImageVector by lazy {
+    simpleIcon("Filled.Link") {
+        moveTo(3.9f, 12.0f); curveToRelative(0.0f, -1.71f, 1.39f, -3.1f, 3.1f, -3.1f)
+        horizontalLineToRelative(4.0f); verticalLineTo(7.0f); horizontalLineTo(7.0f)
+        curveToRelative(-2.76f, 0.0f, -5.0f, 2.24f, -5.0f, 5.0f); reflectiveCurveToRelative(2.24f, 5.0f, 5.0f, 5.0f)
+        horizontalLineToRelative(4.0f); verticalLineToRelative(-1.9f); horizontalLineTo(7.0f)
+        curveToRelative(-1.71f, 0.0f, -3.1f, -1.39f, -3.1f, -3.1f); close()
+        moveTo(8.0f, 13.0f); horizontalLineToRelative(8.0f); verticalLineToRelative(-2.0f); horizontalLineTo(8.0f); verticalLineToRelative(2.0f); close()
+        moveTo(17.0f, 7.0f); horizontalLineToRelative(-4.0f); verticalLineToRelative(1.9f); horizontalLineToRelative(4.0f)
+        curveToRelative(1.71f, 0.0f, 3.1f, 1.39f, 3.1f, 3.1f); reflectiveCurveToRelative(-1.39f, 3.1f, -3.1f, 3.1f)
+        horizontalLineToRelative(-4.0f); verticalLineTo(17.0f); horizontalLineToRelative(4.0f)
+        curveToRelative(2.76f, 0.0f, 5.0f, -2.24f, 5.0f, -5.0f); reflectiveCurveToRelative(-2.24f, -5.0f, -5.0f, -5.0f); close()
+    }
+}
+
+val Icons.Filled.Videocam: ImageVector by lazy {
+    simpleIcon("Filled.Videocam") {
+        moveTo(17.0f, 10.5f); verticalLineTo(7.0f); curveToRelative(0.0f, -0.55f, -0.45f, -1.0f, -1.0f, -1.0f)
+        horizontalLineTo(4.0f); curveToRelative(-0.55f, 0.0f, -1.0f, 0.45f, -1.0f, 1.0f); verticalLineToRelative(10.0f)
+        curveToRelative(0.0f, 0.55f, 0.45f, 1.0f, 1.0f, 1.0f); horizontalLineToRelative(12.0f)
+        curveToRelative(0.55f, 0.0f, 1.0f, -0.45f, 1.0f, -1.0f); verticalLineToRelative(-3.5f)
+        lineToRelative(4.0f, 4.0f); verticalLineToRelative(-11.0f); lineToRelative(-4.0f, 4.0f); close()
+    }
+}
+
+val Icons.Filled.MusicNote: ImageVector by lazy {
+    simpleIcon("Filled.MusicNote") {
+        moveTo(12.0f, 3.0f); verticalLineToRelative(10.55f); curveToRelative(-0.59f, -0.34f, -1.27f, -0.55f, -2.0f, -0.55f)
+        curveToRelative(-2.21f, 0.0f, -4.0f, 1.79f, -4.0f, 4.0f); reflectiveCurveToRelative(1.79f, 4.0f, 4.0f, 4.0f)
+        reflectiveCurveToRelative(4.0f, -1.79f, 4.0f, -4.0f); verticalLineTo(7.0f); horizontalLineToRelative(4.0f)
+        verticalLineTo(3.0f); horizontalLineToRelative(-6.0f); close()
+    }
+}
+
+val Icons.Filled.Vibration: ImageVector by lazy {
+    simpleIcon("Filled.Vibration") {
+        moveTo(0.0f, 15.0f); horizontalLineToRelative(2.0f); verticalLineTo(9.0f); horizontalLineTo(0.0f); verticalLineToRelative(6.0f); close()
+        moveTo(3.0f, 17.0f); horizontalLineToRelative(2.0f); verticalLineTo(7.0f); horizontalLineTo(3.0f); verticalLineToRelative(10.0f); close()
+        moveTo(22.0f, 9.0f); verticalLineToRelative(6.0f); horizontalLineToRelative(2.0f); verticalLineTo(9.0f); horizontalLineToRelative(-2.0f); close()
+        moveTo(19.0f, 17.0f); horizontalLineToRelative(2.0f); verticalLineTo(7.0f); horizontalLineToRelative(-2.0f); verticalLineToRelative(10.0f); close()
+        moveTo(16.5f, 3.0f); horizontalLineToRelative(-9.0f); curveTo(6.67f, 3.0f, 6.0f, 3.67f, 6.0f, 4.5f)
+        verticalLineToRelative(15.0f); curveToRelative(0.0f, 0.83f, 0.67f, 1.5f, 1.5f, 1.5f); horizontalLineToRelative(9.0f)
+        curveToRelative(0.83f, 0.0f, 1.5f, -0.67f, 1.5f, -1.5f); verticalLineToRelative(-15.0f)
+        curveTo(18.0f, 3.67f, 17.33f, 3.0f, 16.5f, 3.0f); close()
+        moveTo(16.0f, 19.0f); horizontalLineTo(8.0f); verticalLineTo(5.0f); horizontalLineToRelative(8.0f); verticalLineToRelative(14.0f); close()
+    }
+}
+
+val Icons.Filled.VerifiedUser: ImageVector by lazy {
+    simpleIcon("Filled.VerifiedUser") {
+        moveTo(12.0f, 1.0f); lineTo(3.0f, 5.0f); verticalLineToRelative(6.0f)
+        curveToRelative(0.0f, 5.55f, 3.84f, 10.74f, 9.0f, 12.0f)
+        curveToRelative(5.16f, -1.26f, 9.0f, -6.45f, 9.0f, -12.0f); verticalLineTo(5.0f); lineToRelative(-9.0f, -4.0f); close()
+        moveTo(10.0f, 17.0f); lineToRelative(-4.0f, -4.0f); lineToRelative(1.41f, -1.41f); lineTo(10.0f, 14.17f)
+        lineToRelative(6.59f, -6.59f); lineTo(18.0f, 9.0f); lineToRelative(-8.0f, 8.0f); close()
+    }
+}
+
+

@@ -1,5 +1,12 @@
 package com.example.feature.moments
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,6 +78,7 @@ import com.example.core.designsystem.MeroType
 import com.example.core.domain.CulturePost
 import com.example.core.domain.PollVote
 import com.example.core.domain.SavedNote
+import com.example.core.domain.TodoItem
 import com.example.core.domain.UiState
 import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
@@ -83,7 +91,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 
-enum class MomentsSubTab { FEED, NOTES }
+enum class MomentsSubTab { FEED, NOTES, TODOS }
 
 @Composable
 fun MomentsScreen(
@@ -94,6 +102,7 @@ fun MomentsScreen(
     onConsumedRequestedTab: () -> Unit,
     postsState: UiState<List<CulturePost>>,
     notesState: UiState<List<SavedNote>>,
+    todosState: UiState<List<TodoItem>>,
     isBusy: Boolean,
     observeReactions: (String) -> Flow<List<String>>,
     observePollVotes: (String) -> Flow<List<PollVote>>,
@@ -120,6 +129,18 @@ fun MomentsScreen(
         onDone: () -> Unit
     ) -> Unit,
     onDeleteNote: (String) -> Unit,
+    onSaveTodo: (
+        existingId: String?,
+        title: String,
+        notes: String,
+        category: String,
+        priority: String,
+        dueDateLabel: String,
+        completed: Boolean,
+        onDone: () -> Unit
+    ) -> Unit,
+    onToggleTodo: (String, Boolean) -> Unit,
+    onDeleteTodo: (String) -> Unit,
     onOpenAuthorProfile: (String) -> Unit,
     onShowError: (String) -> Unit,
     bottomPadding: Dp
@@ -143,6 +164,8 @@ fun MomentsScreen(
     var noteTargetPost by remember { mutableStateOf<CulturePost?>(null) }
     var editingNote by remember { mutableStateOf<SavedNote?>(null) }
     var showBlankNoteSheet by remember { mutableStateOf(false) }
+    var editingTodo by remember { mutableStateOf<TodoItem?>(null) }
+    var showCreateTodoSheet by remember { mutableStateOf(false) }
 
     val nextFestival = remember { BikramSambatConverter.upcomingFestivalsWithCountdown().firstOrNull() }
 
@@ -156,19 +179,34 @@ fun MomentsScreen(
             showLogo = true,
             trailingActions = {
                 MeroIconButton(
-                    icon = if (activeTab == MomentsSubTab.FEED) Icons.Filled.Add else Icons.Filled.NoteAdd,
-                    contentDescription = if (activeTab == MomentsSubTab.FEED) s.shareThoughtCta else s.addPersonalNote,
+                    icon = when (activeTab) {
+                        MomentsSubTab.FEED -> Icons.Filled.Add
+                        MomentsSubTab.NOTES -> Icons.Filled.NoteAdd
+                        MomentsSubTab.TODOS -> Icons.Filled.Add
+                    },
+                    contentDescription = when (activeTab) {
+                        MomentsSubTab.FEED -> s.shareThoughtCta
+                        MomentsSubTab.NOTES -> s.addPersonalNote
+                        MomentsSubTab.TODOS -> s.addTodoCta
+                    },
                     tint = colors.primary,
                     containerColor = colors.surface2,
                     onClick = {
-                        if (activeTab == MomentsSubTab.FEED) {
-                            composerInitialThought = ""
-                            composerPollMode = false
-                            showCreateSheet = true
-                        } else {
-                            editingNote = null
-                            noteTargetPost = null
-                            showBlankNoteSheet = true
+                        when (activeTab) {
+                            MomentsSubTab.FEED -> {
+                                composerInitialThought = ""
+                                composerPollMode = false
+                                showCreateSheet = true
+                            }
+                            MomentsSubTab.NOTES -> {
+                                editingNote = null
+                                noteTargetPost = null
+                                showBlankNoteSheet = true
+                            }
+                            MomentsSubTab.TODOS -> {
+                                editingTodo = null
+                                showCreateTodoSheet = true
+                            }
                         }
                     },
                     testTag = "moments_topbar_add_button"
@@ -177,7 +215,7 @@ fun MomentsScreen(
         )
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 560.dp)
@@ -197,6 +235,13 @@ fun MomentsScreen(
                 onClick = { activeTab = MomentsSubTab.NOTES },
                 modifier = Modifier.weight(1f),
                 testTag = "moments_tab_notes"
+            )
+            MeroChip(
+                label = s.todosTab,
+                selected = activeTab == MomentsSubTab.TODOS,
+                onClick = { activeTab = MomentsSubTab.TODOS },
+                modifier = Modifier.weight(1f),
+                testTag = "moments_tab_todos"
             )
         }
 
@@ -240,7 +285,16 @@ fun MomentsScreen(
             }
         }
 
-        when (activeTab) {
+        AnimatedContent(
+            targetState = activeTab,
+            transitionSpec = {
+                val forward = targetState.ordinal > initialState.ordinal
+                (fadeIn(tween(200)) + slideInHorizontally(tween(200)) { w -> if (forward) w / 6 else -w / 6 })
+                    .togetherWith(fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { w -> if (forward) -w / 8 else w / 8 })
+            },
+            label = "moments_subtab_transition"
+        ) { currentSubTab ->
+        when (currentSubTab) {
             MomentsSubTab.FEED -> {
                 LazyColumn(
                     contentPadding = PaddingValues(
@@ -406,6 +460,22 @@ fun MomentsScreen(
                     }
                 }
             }
+
+            MomentsSubTab.TODOS -> {
+                TodosTabContent(
+                    todosState = todosState,
+                    language = language,
+                    onAddNew = {
+                        editingTodo = null
+                        showCreateTodoSheet = true
+                    },
+                    onEdit = { editingTodo = it },
+                    onToggleCompleted = onToggleTodo,
+                    onDelete = onDeleteTodo,
+                    bottomPadding = bottomPadding
+                )
+            }
+        }
         }
     }
 
@@ -441,6 +511,24 @@ fun MomentsScreen(
                     noteTargetPost = null
                     editingNote = null
                     showBlankNoteSheet = false
+                }
+            }
+        )
+    }
+
+    if (editingTodo != null || showCreateTodoSheet) {
+        SaveTodoSheet(
+            language = language,
+            editingTodo = editingTodo,
+            isBusy = isBusy,
+            onDismiss = {
+                editingTodo = null
+                showCreateTodoSheet = false
+            },
+            onSave = { existingId, title, notes, category, priority, dueDateLabel, completed ->
+                onSaveTodo(existingId, title, notes, category, priority, dueDateLabel, completed) {
+                    editingTodo = null
+                    showCreateTodoSheet = false
                 }
             }
         )

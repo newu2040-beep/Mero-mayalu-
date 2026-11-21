@@ -72,6 +72,12 @@ import com.example.core.util.NepaliCultureCatalog
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Map
+import com.example.core.domain.PublicProfile
+import com.example.core.domain.SecretCompliment
+import com.example.core.util.LocationServiceHelper
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CultureScreen(
@@ -79,7 +85,11 @@ fun CultureScreen(
     useBikramSambat: Boolean,
     placesState: UiState<HeritagePlacesResult>?,
     onSearchPlaces: (String) -> Unit,
-    bottomPadding: Dp
+    bottomPadding: Dp,
+    myProfile: PublicProfile? = null,
+    receivedCompliments: List<SecretCompliment> = emptyList(),
+    onOpenHangoutPlanner: () -> Unit = {},
+    onSaveDailyQuestionAnswer: (String) -> Unit = {}
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
@@ -89,6 +99,10 @@ fun CultureScreen(
     var placeQuery by rememberSaveable { mutableStateOf("") }
     var icebreakerIdx by rememberSaveable { mutableIntStateOf(0) }
     var showQuizSheet by rememberSaveable { mutableStateOf(false) }
+    var dailyQuestionIdx by rememberSaveable { mutableIntStateOf(0) }
+    var dailyAnswerDraft by rememberSaveable(myProfile?.dailyQuestionAnswer) {
+        mutableStateOf(myProfile?.dailyQuestionAnswer.orEmpty())
+    }
     val todayAd = remember { LocalDate.now() }
     val todayBs = remember(todayAd) { BikramSambatConverter.fromLocalDate(todayAd) }
     val countdowns = remember(todayAd) { BikramSambatConverter.upcomingFestivalsWithCountdown(todayAd).take(3) }
@@ -137,6 +151,139 @@ fun CultureScreen(
                                 Text(
                                     text = todayAd.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")),
                                     style = MeroType.Caption.copy(color = colors.textMuted)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Mayalu AI Hangout Planner ❤️ (Gemini Smart Itinerary & Virtual Meetup Planner)
+            item {
+                MeroCard(modifier = Modifier.widthIn(max = 560.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Map,
+                            contentDescription = null,
+                            tint = colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = if (isNe) "मायालु AI ह्याङआउट प्लानर ❤️" else "Mayalu AI Hangout Planner ❤️",
+                            style = MeroType.Heading.copy(color = colors.text),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Text(
+                        text = if (isNe) {
+                            "सहर, बजेट (NPR), समूह संख्या, समय र रुचि अनुसार समयतालिका, यातायात, खर्च विवरण, सुरक्षा सुझाव र भर्चुअल मिटअप योजना बनाउनुहोस्।"
+                        } else {
+                            "Plan a realistic Nepali outing with Gemini AI: timeline, travel times, NPR cost breakdown, places to avoid, safety tips, backup spots, and meetup invites."
+                        },
+                        style = MeroType.Body.copy(color = colors.textMuted)
+                    )
+                    MeroButton(
+                        text = if (isNe) "AI ह्याङआउट योजना खोल्नुहोस्" else "Open AI Hangout Planner",
+                        leadingIcon = Icons.Filled.AutoAwesome,
+                        onClick = onOpenHangoutPlanner,
+                        testTag = "open_ai_hangout_planner_button"
+                    )
+                }
+            }
+
+            // Mayalu Daily Question Card
+            item {
+                val qPair = LocationServiceHelper.DAILY_QUESTIONS[dailyQuestionIdx % LocationServiceHelper.DAILY_QUESTIONS.size]
+                val samples = if (isNe) qPair.sampleAnswersNe else qPair.sampleAnswersEn
+                MeroCard(modifier = Modifier.widthIn(max = 560.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (isNe) "आजको मायालु प्रश्न 💬" else "Mayalu Daily Question 💬",
+                            style = MeroType.Heading.copy(color = colors.text)
+                        )
+                        MeroChip(
+                            label = if (isNe) "अर्को प्रश्न" else "Next Q",
+                            selected = false,
+                            onClick = { dailyQuestionIdx += 1 },
+                            testTag = "daily_question_next_chip"
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.small),
+                        color = colors.surface2,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (isNe) qPair.questionNe else qPair.questionEn,
+                            style = MeroType.Body.copy(color = colors.primary, fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(MeroSpacing.md)
+                        )
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs)
+                    ) {
+                        samples.forEachIndexed { sIdx, sampleAns ->
+                            MeroChip(
+                                label = sampleAns,
+                                selected = dailyAnswerDraft == sampleAns,
+                                onClick = { dailyAnswerDraft = sampleAns },
+                                testTag = "daily_question_sample_$sIdx"
+                            )
+                        }
+                    }
+                    MeroInput(
+                        label = if (isNe) "तपाईंको जवाफ (प्रोफाइलमा देखिने)" else "Your Answer (shown on your profile)",
+                        value = dailyAnswerDraft,
+                        onValueChange = { if (it.length <= 200) dailyAnswerDraft = it },
+                        placeholder = if (isNe) "आफ्नो विचार लेख्नुहोस्..." else "Share your thought...",
+                        testTag = "daily_question_input"
+                    )
+                    MeroSecondaryButton(
+                        text = if (isNe) "जवाफ सुरक्षित गर्नुहोस्" else "Save Daily Answer",
+                        onClick = { onSaveDailyQuestionAnswer(dailyAnswerDraft.trim()) },
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "save_daily_question_button"
+                    )
+                }
+            }
+
+            // Secret Compliments Received 🌸
+            if (receivedCompliments.isNotEmpty()) {
+                item {
+                    MeroCard(modifier = Modifier.widthIn(max = 560.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Favorite,
+                                contentDescription = null,
+                                tint = colors.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Text(
+                                text = if (isNe) "प्राप्त गोप्य प्रशंसा 🌸 (${receivedCompliments.size})" else "Secret Compliments Received 🌸 (${receivedCompliments.size})",
+                                style = MeroType.Heading.copy(color = colors.text)
+                            )
+                        }
+                        receivedCompliments.take(4).forEach { comp ->
+                            Surface(
+                                shape = RoundedCornerShape(MeroRadius.small),
+                                color = colors.surface2,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "“${comp.complimentText}”",
+                                    style = MeroType.Body.copy(color = colors.text, fontWeight = FontWeight.Medium),
+                                    modifier = Modifier.padding(MeroSpacing.md)
                                 )
                             }
                         }

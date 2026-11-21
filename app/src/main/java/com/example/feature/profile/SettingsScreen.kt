@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -65,6 +66,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.compose.ui.platform.testTag
+import com.example.core.audio.MeroRingtoneCatalog
+import com.example.core.audio.MeroSoundAndHapticHelper
 import com.example.core.data.LocalAppPreferences
 import com.example.core.designsystem.LocalMeroColors
 import com.example.core.designsystem.MeroButton
@@ -113,7 +117,11 @@ fun SettingsScreen(
     onUnblockUser: (String) -> Unit,
     onExportSuccessToast: (String) -> Unit,
     onSignOut: () -> Unit,
-    onDeleteAccount: () -> Unit
+    onDeleteAccount: () -> Unit,
+    onToggleOnlineStatus: (Boolean) -> Unit = {},
+    onToggleHaptics: (Boolean) -> Unit = {},
+    onToggleDailyReminders: (Boolean) -> Unit = {},
+    onSelectRingtone: (channel: String, id: String, customUri: String?) -> Unit = { _, _, _ -> }
 ) {
     BackHandler(onBack = onBack)
 
@@ -171,6 +179,39 @@ fun SettingsScreen(
     ) { granted ->
         permissionRefreshKey += 1
         onToggleBoolean("notificationsEnabled", granted)
+    }
+
+    val reminderPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        permissionRefreshKey += 1
+        onToggleDailyReminders(granted)
+    }
+
+    var pendingCustomChannel by remember { mutableStateOf("call") }
+    val customAudioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val channel = pendingCustomChannel
+            scope.launch {
+                val res = MeroSoundAndHapticHelper.copyCustomRingtone(context, channel, uri)
+                res.onSuccess { localFileUri ->
+                    onSelectRingtone(channel, MeroRingtoneCatalog.ID_CUSTOM, localFileUri)
+                    MeroSoundAndHapticHelper.playOneShotTone(
+                        context = context,
+                        channel = channel,
+                        ringtoneId = MeroRingtoneCatalog.ID_CUSTOM,
+                        customUriString = localFileUri
+                    )
+                    onExportSuccessToast(
+                        if (isNe) "आफ्नै रिङटोन सुरक्षित र लागू गरियो!" else "Custom ringtone saved!"
+                    )
+                }.onFailure { err ->
+                    onExportSuccessToast(err.localizedMessage ?: "Audio file error.")
+                }
+            }
+        }
     }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -414,6 +455,105 @@ fun SettingsScreen(
                     label = s.quietHoursToggle,
                     checked = privateUser?.quietHoursEnabled ?: false,
                     onCheckedChange = { onToggleBoolean("quietHoursEnabled", it) }
+                )
+                ToggleRow(
+                    label = s.showOnlineStatusToggle,
+                    checked = localPrefs.showOnlineStatus,
+                    onCheckedChange = { enabled ->
+                        MeroSoundAndHapticHelper.triggerHaptic(context, enabled = localPrefs.hapticFeedbackEnabled)
+                        onToggleOnlineStatus(enabled)
+                    }
+                )
+                ToggleRow(
+                    label = s.hapticFeedbackToggle,
+                    checked = localPrefs.hapticFeedbackEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) MeroSoundAndHapticHelper.triggerHaptic(context, enabled = true, strong = true)
+                        onToggleHaptics(enabled)
+                    }
+                )
+                ToggleRow(
+                    label = s.dailyRemindersToggle,
+                    checked = localPrefs.dailyRemindersEnabled,
+                    onCheckedChange = { enable ->
+                        if (enable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            val granted = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) {
+                                onToggleDailyReminders(true)
+                            } else {
+                                reminderPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        } else {
+                            onToggleDailyReminders(enable)
+                        }
+                    }
+                )
+            }
+
+            // Calling, Messaging & Notification Ringtones
+            MeroCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.MusicNote,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(text = s.ringtonesSectionTitle, style = MeroType.Heading.copy(color = colors.text))
+                }
+                RingtoneChannelPicker(
+                    channel = "call",
+                    title = s.callRingtoneLabel,
+                    selectedId = localPrefs.callRingtoneId,
+                    customUri = localPrefs.callCustomRingtoneUri,
+                    isNepali = isNe,
+                    hapticEnabled = localPrefs.hapticFeedbackEnabled,
+                    onSelectBuiltInOrDefault = { id ->
+                        onSelectRingtone("call", id, null)
+                        MeroSoundAndHapticHelper.playOneShotTone(context, "call", id, "")
+                    },
+                    onPickCustom = {
+                        pendingCustomChannel = "call"
+                        customAudioPicker.launch(arrayOf("audio/*"))
+                    }
+                )
+                RingtoneChannelPicker(
+                    channel = "message",
+                    title = s.messageRingtoneLabel,
+                    selectedId = localPrefs.messageRingtoneId,
+                    customUri = localPrefs.messageCustomRingtoneUri,
+                    isNepali = isNe,
+                    hapticEnabled = localPrefs.hapticFeedbackEnabled,
+                    onSelectBuiltInOrDefault = { id ->
+                        onSelectRingtone("message", id, null)
+                        MeroSoundAndHapticHelper.playOneShotTone(context, "message", id, "")
+                    },
+                    onPickCustom = {
+                        pendingCustomChannel = "message"
+                        customAudioPicker.launch(arrayOf("audio/*"))
+                    }
+                )
+                RingtoneChannelPicker(
+                    channel = "notification",
+                    title = s.notificationRingtoneLabel,
+                    selectedId = localPrefs.notificationRingtoneId,
+                    customUri = localPrefs.notificationCustomRingtoneUri,
+                    isNepali = isNe,
+                    hapticEnabled = localPrefs.hapticFeedbackEnabled,
+                    onSelectBuiltInOrDefault = { id ->
+                        onSelectRingtone("notification", id, null)
+                        MeroSoundAndHapticHelper.playOneShotTone(context, "notification", id, "")
+                    },
+                    onPickCustom = {
+                        pendingCustomChannel = "notification"
+                        customAudioPicker.launch(arrayOf("audio/*"))
+                    }
                 )
             }
 
@@ -682,4 +822,53 @@ private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (th
     is FragmentActivity -> this
     is ContextWrapper -> baseContext.findFragmentActivity()
     else -> null
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RingtoneChannelPicker(
+    channel: String,
+    title: String,
+    selectedId: String,
+    customUri: String,
+    isNepali: Boolean,
+    hapticEnabled: Boolean,
+    onSelectBuiltInOrDefault: (String) -> Unit,
+    onPickCustom: () -> Unit
+) {
+    val colors = LocalMeroColors.current
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs)) {
+        Text(
+            text = title,
+            style = MeroType.Body.copy(color = colors.text, fontWeight = FontWeight.Medium)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs)
+        ) {
+            MeroRingtoneCatalog.options.forEach { option ->
+                val isSelected = selectedId == option.id
+                val baseLabel = if (isNepali) option.labelNe else option.labelEn
+                val displayLabel = if (option.id == MeroRingtoneCatalog.ID_CUSTOM && isSelected && customUri.isNotBlank()) {
+                    "$baseLabel ✓"
+                } else {
+                    baseLabel
+                }
+                MeroChip(
+                    label = displayLabel,
+                    selected = isSelected,
+                    onClick = {
+                        MeroSoundAndHapticHelper.triggerHaptic(context, enabled = hapticEnabled)
+                        if (option.id == MeroRingtoneCatalog.ID_CUSTOM) {
+                            onPickCustom()
+                        } else {
+                            onSelectBuiltInOrDefault(option.id)
+                        }
+                    },
+                    testTag = "ringtone_${channel}_${option.id}"
+                )
+            }
+        }
+    }
 }

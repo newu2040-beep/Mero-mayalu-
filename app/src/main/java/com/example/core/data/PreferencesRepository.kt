@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.core.designsystem.MeroFontCatalog
 import com.example.core.designsystem.MeroThemeCatalog
@@ -23,7 +24,17 @@ data class LocalAppPreferences(
     val themeMode: MeroThemeMode = MeroThemeMode.SYSTEM,
     val useBikramSambat: Boolean = true,
     val reducedMotion: Boolean = false,
-    val appLockEnabled: Boolean = false
+    val appLockEnabled: Boolean = false,
+    val showOnlineStatus: Boolean = true,
+    val hapticFeedbackEnabled: Boolean = true,
+    val dailyRemindersEnabled: Boolean = true,
+    val callRingtoneId: String = "himalayan_flute",
+    val callCustomRingtoneUri: String = "",
+    val messageRingtoneId: String = "lotus_chime",
+    val messageCustomRingtoneUri: String = "",
+    val notificationRingtoneId: String = "kathmandu_bell",
+    val notificationCustomRingtoneUri: String = "",
+    val acceptedDisclaimerUids: Set<String> = emptySet()
 )
 
 class PreferencesRepository(private val context: Context) {
@@ -35,6 +46,16 @@ class PreferencesRepository(private val context: Context) {
         val USE_BIKRAM_SAMBAT = booleanPreferencesKey("use_bikram_sambat")
         val REDUCED_MOTION = booleanPreferencesKey("reduced_motion")
         val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
+        val SHOW_ONLINE_STATUS = booleanPreferencesKey("show_online_status")
+        val HAPTIC_FEEDBACK_ENABLED = booleanPreferencesKey("haptic_feedback_enabled")
+        val DAILY_REMINDERS_ENABLED = booleanPreferencesKey("daily_reminders_enabled")
+        val CALL_RINGTONE_ID = stringPreferencesKey("call_ringtone_id")
+        val CALL_CUSTOM_RINGTONE_URI = stringPreferencesKey("call_custom_ringtone_uri")
+        val MESSAGE_RINGTONE_ID = stringPreferencesKey("message_ringtone_id")
+        val MESSAGE_CUSTOM_RINGTONE_URI = stringPreferencesKey("message_custom_ringtone_uri")
+        val NOTIFICATION_RINGTONE_ID = stringPreferencesKey("notification_ringtone_id")
+        val NOTIFICATION_CUSTOM_RINGTONE_URI = stringPreferencesKey("notification_custom_ringtone_uri")
+        val ACCEPTED_DISCLAIMER_UIDS = stringSetPreferencesKey("accepted_disclaimer_uids")
     }
 
     val preferencesFlow: Flow<LocalAppPreferences> = context.meroDataStore.data.map { prefs ->
@@ -45,7 +66,17 @@ class PreferencesRepository(private val context: Context) {
             themeMode = MeroThemeMode.fromId(prefs[Keys.THEME_MODE] ?: MeroThemeMode.SYSTEM.id),
             useBikramSambat = prefs[Keys.USE_BIKRAM_SAMBAT] ?: true,
             reducedMotion = prefs[Keys.REDUCED_MOTION] ?: false,
-            appLockEnabled = prefs[Keys.APP_LOCK_ENABLED] ?: false
+            appLockEnabled = prefs[Keys.APP_LOCK_ENABLED] ?: false,
+            showOnlineStatus = prefs[Keys.SHOW_ONLINE_STATUS] ?: true,
+            hapticFeedbackEnabled = prefs[Keys.HAPTIC_FEEDBACK_ENABLED] ?: true,
+            dailyRemindersEnabled = prefs[Keys.DAILY_REMINDERS_ENABLED] ?: true,
+            callRingtoneId = prefs[Keys.CALL_RINGTONE_ID] ?: "himalayan_flute",
+            callCustomRingtoneUri = prefs[Keys.CALL_CUSTOM_RINGTONE_URI] ?: "",
+            messageRingtoneId = prefs[Keys.MESSAGE_RINGTONE_ID] ?: "lotus_chime",
+            messageCustomRingtoneUri = prefs[Keys.MESSAGE_CUSTOM_RINGTONE_URI] ?: "",
+            notificationRingtoneId = prefs[Keys.NOTIFICATION_RINGTONE_ID] ?: "kathmandu_bell",
+            notificationCustomRingtoneUri = prefs[Keys.NOTIFICATION_CUSTOM_RINGTONE_URI] ?: "",
+            acceptedDisclaimerUids = prefs[Keys.ACCEPTED_DISCLAIMER_UIDS] ?: emptySet()
         )
     }
 
@@ -75,5 +106,44 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun setAppLockEnabled(enabled: Boolean) {
         context.meroDataStore.edit { it[Keys.APP_LOCK_ENABLED] = enabled }
+    }
+
+    suspend fun setShowOnlineStatus(enabled: Boolean) {
+        context.meroDataStore.edit { it[Keys.SHOW_ONLINE_STATUS] = enabled }
+    }
+
+    suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
+        context.meroDataStore.edit { it[Keys.HAPTIC_FEEDBACK_ENABLED] = enabled }
+    }
+
+    suspend fun setDailyRemindersEnabled(enabled: Boolean) {
+        context.meroDataStore.edit { it[Keys.DAILY_REMINDERS_ENABLED] = enabled }
+    }
+
+    suspend fun setRingtone(channel: String, ringtoneId: String, customUri: String? = null) {
+        context.meroDataStore.edit { prefs ->
+            when (channel) {
+                "call" -> {
+                    prefs[Keys.CALL_RINGTONE_ID] = ringtoneId
+                    if (customUri != null) prefs[Keys.CALL_CUSTOM_RINGTONE_URI] = customUri
+                }
+                "message" -> {
+                    prefs[Keys.MESSAGE_RINGTONE_ID] = ringtoneId
+                    if (customUri != null) prefs[Keys.MESSAGE_CUSTOM_RINGTONE_URI] = customUri
+                }
+                else -> {
+                    prefs[Keys.NOTIFICATION_RINGTONE_ID] = ringtoneId
+                    if (customUri != null) prefs[Keys.NOTIFICATION_CUSTOM_RINGTONE_URI] = customUri
+                }
+            }
+        }
+    }
+
+    suspend fun markDisclaimerAccepted(uid: String) {
+        if (uid.isBlank()) return
+        context.meroDataStore.edit { prefs ->
+            val current = prefs[Keys.ACCEPTED_DISCLAIMER_UIDS] ?: emptySet()
+            prefs[Keys.ACCEPTED_DISCLAIMER_UIDS] = current + uid
+        }
     }
 }

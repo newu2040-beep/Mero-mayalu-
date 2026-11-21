@@ -1,6 +1,8 @@
 package com.example.feature.discovery
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -77,6 +79,7 @@ import com.example.core.designsystem.MeroIconButton
 import com.example.core.designsystem.MeroLoadingState
 import com.example.core.designsystem.MeroLotusEmblem
 import com.example.core.designsystem.MeroPhotoBox
+import com.example.core.designsystem.MeroPresenceBadge
 import com.example.core.designsystem.MeroRadius
 import com.example.core.designsystem.MeroSecondaryButton
 import com.example.core.designsystem.MeroSpacing
@@ -88,6 +91,11 @@ import com.example.core.domain.UiState
 import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
 import com.example.feature.main.DiscoverySubTab
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.filled.Mood
+import androidx.compose.material.icons.filled.Search
+import com.example.core.util.LocationServiceHelper
 
 @Composable
 fun DiscoveryScreen(
@@ -104,10 +112,18 @@ fun DiscoveryScreen(
     onReportUser: (PublicProfile) -> Unit,
     onBlockUser: (PublicProfile) -> Unit,
     onRetry: () -> Unit,
-    bottomPadding: androidx.compose.ui.unit.Dp
+    bottomPadding: androidx.compose.ui.unit.Dp,
+    myProfile: PublicProfile? = null,
+    selectedActivityFilter: String? = null,
+    onSelectActivityFilter: (String?) -> Unit = {},
+    onOpenLocationPrivacy: () -> Unit = {},
+    onOpenVibeCheck: () -> Unit = {},
+    onOpenCompatibility: (PublicProfile) -> Unit = {},
+    onOpenSearchById: () -> Unit = {}
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
 
     Column(
         modifier = Modifier
@@ -120,7 +136,7 @@ fun DiscoveryScreen(
             trailingActions = {
                 MeroIconButton(
                     icon = Icons.Filled.Refresh,
-                    contentDescription = if (language == AppLanguage.NEPALI) "रिफ्रेस गर्नुहोस्" else "Refresh feed",
+                    contentDescription = if (isNe) "रिफ्रेस गर्नुहोस्" else "Refresh feed",
                     onClick = onRetry,
                     testTag = "discovery_refresh_button"
                 )
@@ -141,7 +157,7 @@ fun DiscoveryScreen(
                 .fillMaxWidth()
                 .widthIn(max = 560.dp)
                 .align(Alignment.CenterHorizontally)
-                .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.sm)
+                .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.xs)
         ) {
             MeroChip(
                 label = s.tabNearby,
@@ -164,6 +180,67 @@ fun DiscoveryScreen(
                 modifier = Modifier.weight(1f),
                 testTag = "subtab_heritage"
             )
+        }
+
+        // Real-Time Location, Nepali Vibe Check & Nearby Activity Match Filter Strip
+        val myVibeCard = remember(myProfile?.currentVibeId) {
+            myProfile?.currentVibeId?.takeIf { it.isNotBlank() }?.let { LocationServiceHelper.vibeById(it) }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = MeroSpacing.lg, vertical = MeroSpacing.xs)
+        ) {
+            MeroChip(
+                label = if (isNe) "ID खोज" else "Find by ID",
+                selected = false,
+                leadingIcon = Icons.Filled.Search,
+                onClick = onOpenSearchById,
+                testTag = "discovery_search_id_chip"
+            )
+            MeroChip(
+                label = if (myProfile?.locationSharingEnabled == true) {
+                    if (isNe) "📍 ${myProfile.district} (प्रत्यक्ष km)" else "📍 ${myProfile.district} (Live km)"
+                } else {
+                    if (isNe) "📍 स्थान र दुरी" else "📍 Location & km"
+                },
+                selected = myProfile?.locationSharingEnabled == true,
+                leadingIcon = Icons.Filled.LocationOn,
+                onClick = onOpenLocationPrivacy,
+                testTag = "discovery_location_privacy_chip"
+            )
+            MeroChip(
+                label = if (myVibeCard != null) {
+                    "${myVibeCard.emoji} ${if (isNe) myVibeCard.titleNe else myVibeCard.titleEn}"
+                } else {
+                    if (isNe) "☕ नेपाली भाइब" else "☕ Vibe Check"
+                },
+                selected = myVibeCard != null,
+                leadingIcon = Icons.Filled.Mood,
+                onClick = onOpenVibeCheck,
+                testTag = "discovery_vibe_check_chip"
+            )
+            if (selectedActivityFilter != null) {
+                MeroChip(
+                    label = if (isNe) "सबै गतिविधि" else "All Activities",
+                    selected = false,
+                    onClick = { onSelectActivityFilter(null) },
+                    testTag = "activity_filter_clear"
+                )
+            }
+            LocationServiceHelper.NEPALI_ACTIVITY_OPTIONS.forEach { actOpt ->
+                MeroChip(
+                    label = "${actOpt.emoji} ${if (isNe) actOpt.labelNe else actOpt.labelEn}",
+                    selected = selectedActivityFilter == actOpt.id,
+                    onClick = {
+                        onSelectActivityFilter(actOpt.id)
+                    },
+                    testTag = "activity_filter_${actOpt.id}"
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -191,7 +268,7 @@ fun DiscoveryScreen(
         when (feedState) {
             is UiState.Loading -> {
                 MeroLoadingState(
-                    message = if (language == AppLanguage.NEPALI) "प्रोफाइलहरू लोड हुँदैछन्..." else "Loading eligible profiles..."
+                    message = if (isNe) "प्रोफाइलहरू लोड हुँदैछन्..." else "Loading eligible profiles..."
                 )
             }
             is UiState.Error -> {
@@ -215,9 +292,12 @@ fun DiscoveryScreen(
                             icon = Icons.Filled.Explore,
                             title = s.emptyDiscoveryTitle,
                             body = s.emptyDiscoveryBody,
-                            actionLabel = if (subTab != DiscoverySubTab.FOR_YOU) s.resetFilters else null,
-                            onAction = if (subTab != DiscoverySubTab.FOR_YOU) {
-                                { onSelectSubTab(DiscoverySubTab.FOR_YOU) }
+                            actionLabel = if (subTab != DiscoverySubTab.FOR_YOU || selectedActivityFilter != null) s.resetFilters else null,
+                            onAction = if (subTab != DiscoverySubTab.FOR_YOU || selectedActivityFilter != null) {
+                                {
+                                    onSelectActivityFilter(null)
+                                    onSelectSubTab(DiscoverySubTab.FOR_YOU)
+                                }
                             } else null
                         )
                     }
@@ -236,9 +316,11 @@ fun DiscoveryScreen(
                         items(profiles, key = { it.uid }) { profile ->
                             DiscoveryProfileCard(
                                 profile = profile,
+                                myProfile = myProfile,
                                 language = language,
                                 canSendInterest = !hasPendingOutgoing,
                                 onViewProfile = { onViewProfile(profile) },
+                                onOpenCompatibility = { onOpenCompatibility(profile) },
                                 onNotInterested = { onNotInterested(profile) },
                                 onInterested = { onInterested(profile) },
                                 onReport = { onReportUser(profile) },
@@ -257,9 +339,11 @@ fun DiscoveryScreen(
 @Composable
 private fun DiscoveryProfileCard(
     profile: PublicProfile,
+    myProfile: PublicProfile?,
     language: AppLanguage,
     canSendInterest: Boolean,
     onViewProfile: () -> Unit,
+    onOpenCompatibility: () -> Unit,
     onNotInterested: () -> Unit,
     onInterested: () -> Unit,
     onReport: () -> Unit,
@@ -268,14 +352,41 @@ private fun DiscoveryProfileCard(
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
     var photoIndex by remember(profile.uid) { mutableIntStateOf(0) }
     var menuExpanded by remember { mutableStateOf(false) }
     val photos = profile.photoDataList
     val activePhoto = photos.getOrNull(photoIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
 
+    val distanceLabel = remember(myProfile, profile, isNe) {
+        if (myProfile != null) {
+            val km = LocationServiceHelper.estimateDistanceKm(myProfile, profile)
+            LocationServiceHelper.formatDistanceBadge(km, isNe).takeIf { it.isNotBlank() }
+        } else null
+    }
+
+    val compatibilityPct = remember(myProfile, profile) {
+        if (myProfile != null) {
+            LocationServiceHelper.computeCompatibility(myProfile, profile).totalPercent
+        } else null
+    }
+
+    val vibeCard = remember(profile.currentVibeId) {
+        profile.currentVibeId.takeIf { it.isNotBlank() }?.let { LocationServiceHelper.vibeById(it) }
+    }
+
+    val isOnlineNow = remember(profile.onlineNow, profile.lastActiveAt) {
+        LocationServiceHelper.isProfileOnline(profile)
+    }
+    val presenceLabel = remember(profile.onlineNow, profile.lastActiveAt, profile.updatedAt, isNe) {
+        LocationServiceHelper.formatPresenceLabel(profile, isNe)
+    }
+
     MeroCard(
         contentPadding = MeroSpacing.md,
-        modifier = modifier.testTag("discovery_card_${profile.uid}")
+        modifier = modifier
+            .animateContentSize(tween(200))
+            .testTag("discovery_card_${profile.uid}")
     ) {
         // Photo Hero Box matching Screen 2 card layout
         Box(
@@ -309,6 +420,26 @@ private fun DiscoveryProfileCard(
                         )
                     )
             )
+
+            // Top-left Mayalu Compatibility Pill
+            if (compatibilityPct != null) {
+                Surface(
+                    shape = RoundedCornerShape(MeroRadius.pill),
+                    color = colors.primary.copy(alpha = 0.92f),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(MeroSpacing.sm)
+                        .clip(RoundedCornerShape(MeroRadius.pill))
+                        .clickable(onClick = onOpenCompatibility)
+                        .testTag("compatibility_badge_${profile.uid}")
+                ) {
+                    Text(
+                        text = if (isNe) "❤️ $compatibilityPct% मिल्ने" else "❤️ $compatibilityPct% Match",
+                        style = MeroType.Caption.copy(color = colors.onPrimary, fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                    )
+                }
+            }
 
             // Top right controls: photo counter pill + overflow menu
             Row(
@@ -348,6 +479,15 @@ private fun DiscoveryProfileCard(
                             onClick = { menuExpanded = false; onViewProfile() }
                         )
                         DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isNe) "मायालु अनुकूलता हेर्नुहोस्" else "Mayalu Compatibility",
+                                    style = MeroType.Body
+                                )
+                            },
+                            onClick = { menuExpanded = false; onOpenCompatibility() }
+                        )
+                        DropdownMenuItem(
                             text = { Text(s.reportUser, style = MeroType.Body) },
                             onClick = { menuExpanded = false; onReport() }
                         )
@@ -359,7 +499,7 @@ private fun DiscoveryProfileCard(
                 }
             }
 
-            // Overlay Name, Age, Location, Badge & Bio
+            // Overlay Name, Age, Location + Approximate Distance, Badge & Bio
             Column(
                 verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
                 modifier = Modifier
@@ -387,6 +527,12 @@ private fun DiscoveryProfileCard(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                    MeroPresenceBadge(
+                        isOnline = isOnlineNow,
+                        label = presenceLabel,
+                        onDarkBackground = true,
+                        modifier = Modifier.testTag("discovery_presence_${profile.uid}")
+                    )
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -399,7 +545,11 @@ private fun DiscoveryProfileCard(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = profile.publicLocationLabel,
+                        text = if (distanceLabel != null) {
+                            "${profile.publicLocationLabel} · $distanceLabel"
+                        } else {
+                            profile.publicLocationLabel
+                        },
                         style = MeroType.Caption.copy(color = Color.White),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -416,13 +566,25 @@ private fun DiscoveryProfileCard(
             }
         }
 
-        // Cultural badge & interest pills below hero
-        if (profile.culturalBadge.isNotBlank() || profile.interests.isNotEmpty()) {
+        // Cultural badge, Nepali Vibe Check & interest pills below hero
+        if (profile.culturalBadge.isNotBlank() || vibeCard != null || profile.favoriteActivities.isNotEmpty() || profile.interests.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                if (vibeCard != null) {
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.pill),
+                        color = colors.primary.copy(alpha = 0.14f)
+                    ) {
+                        Text(
+                            text = "${vibeCard.emoji} ${if (isNe) vibeCard.titleNe else vibeCard.titleEn}",
+                            style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                        )
+                    }
+                }
                 if (profile.culturalBadge.isNotBlank()) {
                     Surface(
                         shape = RoundedCornerShape(MeroRadius.pill),
@@ -435,7 +597,25 @@ private fun DiscoveryProfileCard(
                         )
                     }
                 }
-                profile.interests.take(4).forEach { tag ->
+                profile.favoriteActivities.take(2).forEach { actId ->
+                    val actObj = LocationServiceHelper.NEPALI_ACTIVITY_OPTIONS.firstOrNull { it.id == actId }
+                    val label = if (actObj != null) {
+                        "${actObj.emoji} ${if (isNe) actObj.labelNe else actObj.labelEn}"
+                    } else {
+                        "✨ $actId"
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.pill),
+                        color = colors.surface2
+                    ) {
+                        Text(
+                            text = label,
+                            style = MeroType.Caption.copy(color = colors.text, fontWeight = FontWeight.Medium),
+                            modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                        )
+                    }
+                }
+                profile.interests.take(3).forEach { tag ->
                     Surface(
                         shape = RoundedCornerShape(MeroRadius.pill),
                         color = colors.surface2

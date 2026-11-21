@@ -22,8 +22,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -33,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,12 +47,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.launch
 import com.example.core.designsystem.LocalMeroColors
 import com.example.core.designsystem.MeroBannerImage
 import com.example.core.designsystem.MeroButton
 import com.example.core.designsystem.MeroChip
 import com.example.core.designsystem.MeroInput
 import com.example.core.designsystem.MeroPhotoBox
+import com.example.core.designsystem.MeroPresenceBadge
 import com.example.core.designsystem.MeroRadius
 import com.example.core.designsystem.MeroSecondaryButton
 import com.example.core.designsystem.MeroSpacing
@@ -56,6 +63,8 @@ import com.example.core.designsystem.MeroType
 import com.example.core.domain.PublicProfile
 import com.example.core.localization.AppLanguage
 import com.example.core.localization.AppStrings
+
+import com.example.core.util.LocationServiceHelper
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -66,10 +75,32 @@ fun ProfileDetailSheet(
     onDismiss: () -> Unit,
     onInterested: () -> Unit,
     onReport: () -> Unit,
-    onBlock: () -> Unit
+    onBlock: () -> Unit,
+    myProfile: PublicProfile? = null,
+    onSendCompliment: ((String, String) -> Unit)? = null,
+    onOpenCompatibility: (() -> Unit)? = null
 ) {
     val colors = LocalMeroColors.current
     val s = AppStrings.forLanguage(language)
+    val isNe = language == AppLanguage.NEPALI
+    var showComplimentPicker by remember { mutableStateOf(false) }
+
+    val distanceLabel = remember(myProfile, profile, isNe) {
+        if (myProfile != null && myProfile.uid != profile.uid) {
+            val km = LocationServiceHelper.estimateDistanceKm(myProfile, profile)
+            LocationServiceHelper.formatDistanceBadge(km, isNe).takeIf { it.isNotBlank() }
+        } else null
+    }
+
+    val compatibilityPct = remember(myProfile, profile) {
+        if (myProfile != null && myProfile.uid != profile.uid) {
+            LocationServiceHelper.computeCompatibility(myProfile, profile).totalPercent
+        } else null
+    }
+
+    val vibeCard = remember(profile.currentVibeId) {
+        profile.currentVibeId.takeIf { it.isNotBlank() }?.let { LocationServiceHelper.vibeById(it) }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -102,10 +133,33 @@ fun ProfileDetailSheet(
                     .clip(RoundedCornerShape(MeroRadius.card))
             )
 
-            Text(
-                text = "${profile.displayName}, ${profile.age}",
-                style = MeroType.Title.copy(color = colors.text)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "${profile.displayName}, ${profile.age}",
+                    style = MeroType.Title.copy(color = colors.text),
+                    modifier = Modifier.weight(1f)
+                )
+                if (compatibilityPct != null) {
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.pill),
+                        color = colors.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(MeroRadius.pill))
+                            .clickable(enabled = onOpenCompatibility != null) { onOpenCompatibility?.invoke() }
+                            .testTag("detail_compatibility_pill")
+                    ) {
+                        Text(
+                            text = if (isNe) "❤️ $compatibilityPct% मिल्ने" else "❤️ $compatibilityPct% Match",
+                            style = MeroType.Caption.copy(color = colors.onPrimary, fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                        )
+                    }
+                }
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -113,26 +167,75 @@ fun ProfileDetailSheet(
             ) {
                 Icon(imageVector = Icons.Filled.LocationOn, contentDescription = null, tint = colors.primary)
                 Text(
-                    text = profile.publicLocationLabel,
-                    style = MeroType.Body.copy(color = colors.textMuted)
+                    text = if (distanceLabel != null) {
+                        "${profile.publicLocationLabel} · $distanceLabel"
+                    } else {
+                        profile.publicLocationLabel
+                    },
+                    style = MeroType.Body.copy(color = colors.textMuted),
+                    modifier = Modifier.weight(1f, fill = false)
                 )
             }
 
-            if (profile.culturalBadge.isNotBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(MeroRadius.pill),
-                    color = colors.surface2
-                ) {
-                    Text(
-                        text = profile.culturalBadge,
-                        style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Medium),
-                        modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
-                    )
+            MeroPresenceBadge(
+                isOnline = LocationServiceHelper.isProfileOnline(profile),
+                label = LocationServiceHelper.formatPresenceLabel(profile, isNe),
+                modifier = Modifier.testTag("detail_presence_badge")
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs)
+            ) {
+                if (vibeCard != null) {
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.pill),
+                        color = colors.primary.copy(alpha = 0.14f)
+                    ) {
+                        Text(
+                            text = "${vibeCard.emoji} ${if (isNe) vibeCard.titleNe else vibeCard.titleEn}",
+                            style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                        )
+                    }
+                }
+                if (profile.culturalBadge.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(MeroRadius.pill),
+                        color = colors.surface2
+                    ) {
+                        Text(
+                            text = profile.culturalBadge,
+                            style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Medium),
+                            modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                        )
+                    }
                 }
             }
 
             if (profile.bio.isNotBlank()) {
                 Text(text = profile.bio, style = MeroType.Body.copy(color = colors.text))
+            }
+            if (profile.dailyQuestionAnswer.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(MeroRadius.small),
+                    color = colors.surface2,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+                        modifier = Modifier.padding(MeroSpacing.md)
+                    ) {
+                        Text(
+                            text = if (isNe) "मायालु दैनिक जवाफ 💬" else "Mayalu Daily Answer 💬",
+                            style = MeroType.Caption.copy(color = colors.primary, fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            text = profile.dailyQuestionAnswer,
+                            style = MeroType.Body.copy(color = colors.text)
+                        )
+                    }
+                }
             }
             if (profile.lookingFor.isNotBlank()) {
                 Text(
@@ -180,6 +283,35 @@ fun ProfileDetailSheet(
                                 text = tag,
                                 style = MeroType.Caption.copy(color = colors.text),
                                 modifier = Modifier.padding(horizontal = MeroSpacing.md, vertical = MeroSpacing.xs)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (onSendCompliment != null && myProfile?.uid != profile.uid) {
+                MeroSecondaryButton(
+                    text = if (isNe) "🌸 गोप्य प्रशंसा पठाउनुहोस्" else "🌸 Send Secret Compliment",
+                    onClick = { showComplimentPicker = !showComplimentPicker },
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "detail_secret_compliment_button"
+                )
+                if (showComplimentPicker) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(MeroSpacing.xs),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        LocationServiceHelper.RESPECTFUL_COMPLIMENTS.forEachIndexed { idx, (compKey, pair) ->
+                            val textToSend = if (isNe) pair.second else pair.first
+                            MeroChip(
+                                label = textToSend,
+                                selected = false,
+                                onClick = {
+                                    showComplimentPicker = false
+                                    onSendCompliment(compKey, textToSend)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                testTag = "compliment_option_$idx"
                             )
                         }
                     }
@@ -319,11 +451,11 @@ fun AboutAppDialog(language: AppLanguage, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = colors.surface,
-        title = { Text("${s.aboutApp} · v5.6", style = MeroType.Heading.copy(color = colors.text)) },
+        title = { Text("${s.aboutApp} · v6.0 MAX", style = MeroType.Heading.copy(color = colors.text)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm)) {
                 Text(
-                    text = "${s.appName} (v5.6) — ${s.tagline}",
+                    text = "${s.appName} (v6.0 MAX) — ${s.tagline}",
                     style = MeroType.Body.copy(color = colors.text, fontWeight = FontWeight.Bold)
                 )
                 Text(text = s.privacyNoticeSummary, style = MeroType.Body.copy(color = colors.textMuted))
@@ -364,6 +496,161 @@ fun AboutAppDialog(language: AppLanguage, onDismiss: () -> Unit) {
         },
         confirmButton = {
             MeroButton(text = s.close, onClick = onDismiss, testTag = "about_close_button")
+        }
+    )
+}
+
+@Composable
+fun SearchByIdDialog(
+    language: AppLanguage,
+    onDismiss: () -> Unit,
+    onSearch: suspend (String) -> Result<PublicProfile>,
+    onProfileFound: (PublicProfile) -> Unit
+) {
+    val colors = LocalMeroColors.current
+    val s = AppStrings.forLanguage(language)
+    val scope = rememberCoroutineScope()
+    var uidInput by remember { mutableStateOf("") }
+    var isSearching by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!isSearching) onDismiss() },
+        containerColor = colors.surface,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = s.searchByIdTitle,
+                    style = MeroType.Heading.copy(color = colors.text)
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm)) {
+                MeroInput(
+                    label = s.myUserIdLabel,
+                    value = uidInput,
+                    onValueChange = {
+                        uidInput = it.trim().take(64)
+                        errorMsg = null
+                    },
+                    placeholder = s.searchByIdPlaceholder,
+                    singleLine = true,
+                    testTag = "search_by_id_input"
+                )
+                if (isSearching) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = colors.primary,
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = if (language == AppLanguage.NEPALI) "प्रोफाइल खोजिँदैछ..." else "Searching member profile...",
+                            style = MeroType.Caption.copy(color = colors.textMuted)
+                        )
+                    }
+                }
+                if (!errorMsg.isNullOrBlank()) {
+                    Text(
+                        text = errorMsg.orEmpty(),
+                        style = MeroType.Caption.copy(color = colors.danger),
+                        modifier = Modifier.testTag("search_by_id_error")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            MeroButton(
+                text = s.searchByIdTitle,
+                enabled = uidInput.isNotBlank() && !isSearching,
+                isLoading = isSearching,
+                onClick = {
+                    scope.launch {
+                        isSearching = true
+                        errorMsg = null
+                        val res = onSearch(uidInput)
+                        isSearching = false
+                        res.onSuccess { profile ->
+                            onDismiss()
+                            onProfileFound(profile)
+                        }.onFailure { err ->
+                            errorMsg = err.localizedMessage
+                        }
+                    }
+                },
+                testTag = "search_by_id_submit_button"
+            )
+        },
+        dismissButton = {
+            MeroSecondaryButton(
+                text = s.cancel,
+                enabled = !isSearching,
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                testTag = "search_by_id_cancel_button"
+            )
+        }
+    )
+}
+
+@Composable
+fun FirstDayCommunityDisclaimerDialog(
+    language: AppLanguage,
+    onAccept: () -> Unit
+) {
+    val colors = LocalMeroColors.current
+    val s = AppStrings.forLanguage(language)
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        containerColor = colors.surface,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(MeroSpacing.sm)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.VerifiedUser,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    text = s.disclaimerTitle,
+                    style = MeroType.Heading.copy(color = colors.text)
+                )
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(MeroSpacing.sm),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = s.disclaimerBody,
+                    style = MeroType.Body.copy(color = colors.textMuted)
+                )
+            }
+        },
+        confirmButton = {
+            MeroButton(
+                text = s.disclaimerAcceptButton,
+                onClick = onAccept,
+                testTag = "disclaimer_accept_button"
+            )
         }
     )
 }

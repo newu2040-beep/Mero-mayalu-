@@ -21,6 +21,7 @@
         "notificationsEnabled": { "type": "boolean", "description": "Notification toggle" },
         "discreetNotifications": { "type": "boolean", "description": "Discreet lock-screen preview toggle" },
         "quietHoursEnabled": { "type": "boolean", "description": "Quiet hours toggle" },
+        "showOnlineStatus": { "type": "boolean", "description": "Real-time online presence sharing toggle" },
         "visibility": { "type": "string", "enum": ["visible", "paused"], "description": "Discovery visibility" },
         "activeOutgoingRequestId": { "type": "string", "description": "ID of single active outgoing interest request or empty string" },
         "moderationStatus": { "type": "string", "enum": ["active", "restricted", "suspended"], "description": "Account moderation status" },
@@ -58,6 +59,14 @@
         "district": { "type": "string" },
         "municipality": { "type": "string" },
         "publicLocationLabel": { "type": "string" },
+        "locationSharingEnabled": { "type": "boolean", "description": "Whether coarse approximate distance is shared" },
+        "approxLat": { "type": "number", "description": "Coarse 2-decimal rounded latitude when locationSharingEnabled is true" },
+        "approxLng": { "type": "number", "description": "Coarse 2-decimal rounded longitude when locationSharingEnabled is true" },
+        "currentVibeId": { "type": "string", "description": "Current Nepali Vibe Check card ID" },
+        "favoriteActivities": { "type": "array", "description": "Nearby Activity Match preferences" },
+        "dailyQuestionAnswer": { "type": "string", "description": "Answer to Mayalu Daily Question" },
+        "onlineNow": { "type": "boolean", "description": "Whether the member is currently active online" },
+        "lastActiveAt": { "type": "string", "format": "date-time", "description": "Timestamp when the member was last active" },
         "visibility": { "type": "string", "enum": ["visible", "paused"] },
         "moderationStatus": { "type": "string", "enum": ["active", "restricted", "suspended"] },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -127,6 +136,42 @@
       },
       "required": ["title", "noteText", "sourcePostId", "sourceAuthorName", "sourceExcerpt", "imageData", "createdAt", "updatedAt"]
     },
+    "SavedHangoutPlan": {
+      "title": "SavedHangoutPlan",
+      "description": "Saved Mayalu AI Hangout Planner itinerary owned by a user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "city": { "type": "string" },
+        "startingLocation": { "type": "string" },
+        "durationLabel": { "type": "string" },
+        "groupSize": { "type": "integer" },
+        "totalBudgetNpr": { "type": "integer" },
+        "summaryNotes": { "type": "string" },
+        "stopsSummary": { "type": "array" },
+        "avoidSummary": { "type": "array" },
+        "safetySummary": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "city", "startingLocation", "durationLabel", "groupSize", "totalBudgetNpr", "summaryNotes", "stopsSummary", "avoidSummary", "safetySummary", "createdAt", "updatedAt"]
+    },
+    "TodoItem": {
+      "title": "TodoItem",
+      "description": "Personal to-do item owned by a user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "notes": { "type": "string" },
+        "category": { "type": "string" },
+        "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "dueDateLabel": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "notes", "category", "priority", "dueDateLabel", "completed", "createdAt", "updatedAt"]
+    },
     "InterestRequest": {
       "title": "InterestRequest",
       "description": "Mutual-consent interest request with one-active-outgoing constraint.",
@@ -192,12 +237,12 @@
     },
     "ChatMessage": {
       "title": "ChatMessage",
-      "description": "Message inside a mutual-consent conversation (text, image, or voice note).",
+      "description": "Message inside a mutual-consent conversation (text, HD image, video clip, or voice note).",
       "type": "object",
       "properties": {
         "senderUid": { "type": "string" },
         "memberUids": { "type": "array" },
-        "type": { "type": "string", "enum": ["TEXT", "IMAGE", "VOICE"] },
+        "type": { "type": "string", "enum": ["TEXT", "IMAGE", "VOICE", "VIDEO"] },
         "text": { "type": "string" },
         "mediaData": { "type": "string" },
         "audioDurationSec": { "type": "integer" },
@@ -206,6 +251,81 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["senderUid", "memberUids", "type", "text", "mediaData", "audioDurationSec", "waveform", "moderationStatus", "createdAt"]
+    },
+    "TogetherMemory": {
+      "title": "TogetherMemory",
+      "description": "Shared memory album item inside a mutual connection conversation.",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "title": { "type": "string" },
+        "noteText": { "type": "string" },
+        "imageData": { "type": "string" },
+        "milestoneTag": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "memberUids", "title", "noteText", "imageData", "milestoneTag", "createdAt"]
+    },
+    "CallSession": {
+      "title": "CallSession",
+      "description": "Mutual-consent 1-to-1 audio call session between connected users.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "callerUid": { "type": "string" },
+        "callerName": { "type": "string" },
+        "callerPhoto": { "type": "string" },
+        "calleeUid": { "type": "string" },
+        "calleeName": { "type": "string" },
+        "calleePhoto": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "status": { "type": "string", "enum": ["RINGING", "ACCEPTED", "DECLINED", "ENDED", "MISSED", "BUSY"] },
+        "callerAudioChunk": { "type": "string" },
+        "calleeAudioChunk": { "type": "string" },
+        "callerSeq": { "type": "integer" },
+        "calleeSeq": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "callerUid", "callerName", "callerPhoto", "calleeUid", "calleeName", "calleePhoto", "memberUids", "status", "callerAudioChunk", "calleeAudioChunk", "callerSeq", "calleeSeq", "createdAt", "updatedAt"]
+    },
+    "MeetupInvitation": {
+      "title": "MeetupInvitation",
+      "description": "Collaborative Virtual Meetup Planner invitation between two members.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "senderUid": { "type": "string" },
+        "senderName": { "type": "string" },
+        "recipientUid": { "type": "string" },
+        "recipientName": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "planTitle": { "type": "string" },
+        "city": { "type": "string" },
+        "proposedDateLabel": { "type": "string" },
+        "estimatedBudgetNpr": { "type": "integer" },
+        "stopsPreview": { "type": "array" },
+        "status": { "type": "string", "enum": ["PENDING", "ACCEPTED", "DECLINED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "senderUid", "senderName", "recipientUid", "recipientName", "memberUids", "planTitle", "city", "proposedDateLabel", "estimatedBudgetNpr", "stopsPreview", "status", "createdAt", "updatedAt"]
+    },
+    "SecretCompliment": {
+      "title": "SecretCompliment",
+      "description": "Respectful Nepali cultural compliment sent between profiles.",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string" },
+        "senderHint": { "type": "string" },
+        "recipientUid": { "type": "string" },
+        "complimentKey": { "type": "string" },
+        "complimentText": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderUid", "senderHint", "recipientUid", "complimentKey", "complimentText", "createdAt"]
     },
     "BlockRecord": {
       "title": "BlockRecord",
@@ -272,6 +392,14 @@
       "schema": { "$ref": "#/entities/SavedNote" },
       "description": "Owner-only saved post notes and cultural reflections."
     },
+    "/users/{uid}/hangoutPlans/{planId}": {
+      "schema": { "$ref": "#/entities/SavedHangoutPlan" },
+      "description": "Owner-only saved Mayalu AI Hangout Planner itineraries."
+    },
+    "/users/{uid}/todos/{todoId}": {
+      "schema": { "$ref": "#/entities/TodoItem" },
+      "description": "Owner-only personal To-Do checklist items."
+    },
     "/publicProfiles/{uid}": {
       "schema": { "$ref": "#/entities/PublicProfile" },
       "description": "Public discovery profiles with strict PII exclusion."
@@ -307,6 +435,22 @@
     "/conversations/{conversationId}/messages/{messageId}": {
       "schema": { "$ref": "#/entities/ChatMessage" },
       "description": "Realtime messages inside an approved conversation."
+    },
+    "/conversations/{conversationId}/memories/{memoryId}": {
+      "schema": { "$ref": "#/entities/TogetherMemory" },
+      "description": "Shared Together Memories inside a mutual connection."
+    },
+    "/callSessions/{callId}": {
+      "schema": { "$ref": "#/entities/CallSession" },
+      "description": "Mutual-consent 1-to-1 audio call sessions."
+    },
+    "/meetupInvites/{inviteId}": {
+      "schema": { "$ref": "#/entities/MeetupInvitation" },
+      "description": "Collaborative Virtual Meetup Planner invitations."
+    },
+    "/compliments/{complimentId}": {
+      "schema": { "$ref": "#/entities/SecretCompliment" },
+      "description": "Respectful Nepali compliments sent between users."
     },
     "/blocks/{blockId}": {
       "schema": { "$ref": "#/entities/BlockRecord" },
